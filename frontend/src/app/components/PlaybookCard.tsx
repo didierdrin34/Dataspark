@@ -27,21 +27,17 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
   const [ha, setHa] = useState('1');
   const now = Math.floor(Date.now() / 1000);
 
-  const [memberCoopId, setMemberCoopId] = useState('');
+  const [coopIdInput, setCoopIdInput] = useState('');
 
   const { data: chairCoopId } = useReadContract({
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair',
     args: [address!], query: { enabled: !!address },
   });
-  const isChair = !!chairCoopId && chairCoopId > 0n;
-  const resolvedCoopId = isChair ? chairCoopId : (memberCoopId ? BigInt(memberCoopId) : 0n);
-  const { data: isStaff } = useReadContract({
-    address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'isStaff',
-    args: [resolvedCoopId, address!], query: { enabled: !!address && resolvedCoopId > 0n && !isChair },
-  });
-  // follow() on-chain requires msg.sender == chair, so only chairs can submit the tx.
-  // Members/officers see the UI but the cooperative's chair coopId is used.
-  const coopId = isChair ? chairCoopId : (isStaff && resolvedCoopId > 0n ? resolvedCoopId : 0n);
+  // Resolve coopId: auto from chair lookup, or manual input
+  const coopId = (chairCoopId && chairCoopId > 0n)
+    ? chairCoopId
+    : (coopIdInput ? BigInt(coopIdInput) : 0n);
+
   const { data: already } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'hasFollowed',
     args: [pb.id, coopId], query: { enabled: coopId > 0n },
@@ -52,10 +48,11 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
 
   const active = pb.status === 0;
   const withinWindow = now <= Number(pb.followDeadline);
-  // Show coop # input for non-chairs who are connected
+  const isChair = !!chairCoopId && chairCoopId > 0n;
+  // Show manual input only for non-chairs
   const showCoopInput = active && withinWindow && !!address && !isChair;
-  // Can follow: chair with resolved coopId, or staff member whose chair coopId is known
-  const canFollow = active && withinWindow && (isChair ? coopId > 0n : (!!isStaff && coopId > 0n)) && !already;
+  // Show follow UI whenever we have a coopId and haven't followed yet
+  const canFollow = active && withinWindow && !!address && coopId > 0n && !already;
   const canSettle = active && now >= Number(pb.settleAfter);
   const bps = Number(pb.resultBps) / 100;
   const days = Math.max(0, Math.ceil((Number(pb.followDeadline) - now) / 86400));
@@ -110,17 +107,15 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
         <div className="mt-3">
           <label className="text-xs flex items-center gap-2" style={{ color: 'var(--muted)' }}>
             Your cooperative #
-            <input className="field inline-block w-20" type="number" min="1" value={memberCoopId}
-              onChange={(e) => setMemberCoopId(e.target.value)} placeholder="1" />
+            <input className="field inline-block w-20" type="number" min="1" value={coopIdInput}
+              onChange={(e) => setCoopIdInput(e.target.value)} placeholder="1" />
           </label>
-          {memberCoopId && !isStaff && <p className="mt-1 text-xs" style={{ color: 'var(--sorghum)' }}>Your wallet is not staff of cooperative #{memberCoopId}.</p>}
-          {isStaff && <p className="mt-1 text-xs" style={{ color: 'var(--terrace)' }}>Verified as staff of cooperative #{memberCoopId}. Ask your chairperson to follow from their wallet.</p>}
         </div>
       )}
 
       {(canFollow || canSettle) && (
         <div className="mt-4 flex flex-wrap items-end gap-3">
-          {canFollow && isChair && (
+          {canFollow && (
             <>
               <label className="text-sm flex items-center gap-1">
                 <Clock size={13} style={{ color: 'var(--muted)' }} />
@@ -131,9 +126,6 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
                 steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, Math.round(Number(ha) * 100)] }]}
                 disabled={!(Number(ha) > 0)} />
             </>
-          )}
-          {canFollow && !isChair && (
-            <p className="text-xs" style={{ color: 'var(--muted)' }}>Only the cooperative chairperson wallet can submit the Follow transaction. Share this plan with your chairperson.</p>
           )}
           {canSettle && (
             <TxButton label="Settle season" variant="rain" onDone={onChanged}
