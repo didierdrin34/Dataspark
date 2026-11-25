@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useAccount, useReadContract, useReadContracts, useWatchContractEvent } from 'wagmi';
 import {
-  BATCH_STATUS, CONTRACTS, CROPS, DEPLOYER, erc20Abi, ledgerAbi, memberKey,
+  BATCH_STATUS, CONTRACTS, CROPS, DEPLOYER, addressMemberKey, erc20Abi, ledgerAbi,
   mockRwfAbi, registryAbi, seasonId, seasonLabel, short, voucherAbi,
 } from '../lib/contracts';
 import { useBatches, useDeliveries } from '../hooks/useLedger';
@@ -86,7 +86,7 @@ export default function CooperativePage() {
 
   const [name, setName] = useState('');
   const [district, setDistrict] = useState('Nyagatare');
-  const [memberCode, setMemberCode] = useState('');
+  const [memberWallet, setMemberWallet] = useState('');
   const [plotHa, setPlotHa] = useState('1');
   const [officer, setOfficer] = useState('');
   const [crop, setCrop] = useState('maize');
@@ -99,7 +99,7 @@ export default function CooperativePage() {
   const [lookup, setLookup] = useState('');
 
   const openBatches = batches.items.filter((b) => b.status === 0);
-  const lookupKey = lookup.trim() ? memberKey(lookup) : undefined;
+  const lookupKey = lookup.trim() ? addressMemberKey(lookup) : undefined;
   const { data: usable } = useReadContract({
     address: CONTRACTS.InputVoucher, abi: voucherAbi, functionName: 'usableBalance', args: [coopId, lookupKey!], query: { enabled: coopId > 0n && !!lookupKey },
   });
@@ -201,20 +201,19 @@ export default function CooperativePage() {
 
           {exists && (
             <Card>
-              <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Members are identified by an off-chain code (e.g. RW-NYA-0001) — not a wallet address. Only the code's hash is stored on-chain; names and phone numbers stay in DataSpark's database." />
+              <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Enter the member's wallet address. Only its hash is stored on-chain; no personal data touches the blockchain." />
               {!ready ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--sorghum)' }}><AlertTriangle size={13} /> Members can be added once DataSpark verifies this cooperative.</p>
                 : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p>
                 : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Member code (e.g. RW-NYA-0001)">
-                        <input className="field" value={memberCode} onChange={(e) => setMemberCode(e.target.value)} placeholder="RW-NYA-0006" />
-                        <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Not a wallet address — use your cooperative's member numbering.</p>
+                      <Field label="Member wallet address">
+                        <input className="field font-mono text-sm" value={memberWallet} onChange={(e) => setMemberWallet(e.target.value)} placeholder="0x…" />
                       </Field>
                       <Field label="Plot size (ha)"><input className="field" type="number" min="0.01" step="0.01" value={plotHa} onChange={(e) => setPlotHa(e.target.value)} /></Field>
                     </div>
-                    <TxButton label="Save member" disabled={!memberCode.trim() || !(Number(plotHa) > 0)} onDone={refreshAll}
-                      steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, memberKey(memberCode), Math.round(Number(plotHa) * 100)] }]} />
+                    <TxButton label="Save member" disabled={!/^0x[a-fA-F0-9]{40}$/.test(memberWallet) || !(Number(plotHa) > 0)} onDone={refreshAll}
+                      steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, addressMemberKey(memberWallet), Math.round(Number(plotHa) * 100)] }]} />
                   </div>
                 )}
             </Card>
@@ -267,12 +266,12 @@ export default function CooperativePage() {
                   <div className="grid grid-cols-2 gap-3">
                     <Field label="Batch"><select className="field" value={batchSel} onChange={(e) => setBatchSel(e.target.value)}>
                       <option value="">Select…</option>{openBatches.map((b) => <option key={String(b.id)} value={String(b.id)}>#{String(b.id)} {b.crop} {seasonLabel(b.season)}</option>)}</select></Field>
-                    <Field label="Member code"><input className="field" value={dMember} onChange={(e) => setDMember(e.target.value)} placeholder="RW-NYA-0001" /></Field>
+                    <Field label="Member wallet address"><input className="field font-mono text-sm" value={dMember} onChange={(e) => setDMember(e.target.value)} placeholder="0x…" /></Field>
                     <Field label="Weight (kg)"><input className="field" type="number" min="1" value={kg} onChange={(e) => setKg(e.target.value)} /></Field>
                     <Field label="Grade"><select className="field" value={grade} onChange={(e) => setGrade(Number(e.target.value))}><option value={1}>1 (best)</option><option value={2}>2</option><option value={3}>3</option></select></Field>
                   </div>
-                  <div className="mt-4"><TxButton label="Record delivery" onDone={refreshAll} disabled={!batchSel || !dMember.trim() || !(Number(kg) > 0)}
-                    steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'recordDelivery', args: [BigInt(batchSel), memberKey(dMember), Number(kg), grade] }]} /></div>
+                  <div className="mt-4"><TxButton label="Record delivery" onDone={refreshAll} disabled={!batchSel || !/^0x[a-fA-F0-9]{40}$/.test(dMember) || !(Number(kg) > 0)}
+                    steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'recordDelivery', args: [BigInt(batchSel), addressMemberKey(dMember), Number(kg), grade] }]} /></div>
                 </Card>
               </div>
             )}
@@ -364,7 +363,7 @@ export default function CooperativePage() {
         <Card>
           <Heading title="Input vouchers" hint="Spend-only credit for seed and fertilizer. Cannot be transferred, only redeemed at registered dealers inside its valid dates." />
           <div className="grid gap-4 md:max-w-md">
-            <Field label="Member code"><input className="field" value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="RW-NYA-0001" /></Field>
+            <Field label="Member wallet address"><input className="field font-mono text-sm" value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="0x…" /></Field>
           </div>
           {lookupKey && (
             <div className="mt-5">

@@ -10,6 +10,7 @@ export const DEPLOYER = deployments.deployer.toLowerCase() as Address;
 export const districtKey = (name: string) => keccak256(toBytes(name));
 export const cropKey = (crop: string) => keccak256(toBytes(crop.trim().toLowerCase()));
 export const memberKey = (code: string) => keccak256(toBytes(code.trim().toUpperCase()));
+export const addressMemberKey = (addr: string) => keccak256(toBytes(addr.trim().toLowerCase()));
 
 export const CROPS = ['maize', 'beans', 'irish potato', 'rice', 'cassava', 'sorghum', 'coffee', 'tea'];
 
