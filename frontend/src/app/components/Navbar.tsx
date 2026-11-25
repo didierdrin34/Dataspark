@@ -22,7 +22,7 @@ export default function Navbar() {
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <div className="flex items-center gap-8">
           <Link href="/" className="flex items-center gap-2 font-display text-2xl font-extrabold" style={{ color: 'var(--mist)' }}>
-            <Sprout size={22} style={{ color: 'var(--rain)' }} />
+            {/* <Sprout size={22} style={{ color: 'var(--rain)' }} /> */}
             Data<span style={{ color: 'var(--rain)' }}>Spark</span>
           </Link>
           <nav className="flex gap-1" aria-label="Main">
