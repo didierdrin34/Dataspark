@@ -13,10 +13,10 @@ import { Card, Heading, NotDeployed } from './components/ui';
 
 const LOOP = [
   { t: 'Forecast', d: 'DataSpark reads weather and storm signals for each of Rwanda’s 30 districts.' },
-  { t: 'Playbook', d: 'An agronomist publishes what to plant and when, and stakes HVST on being right.' },
+  { t: 'Farming plan', d: 'An agronomist publishes what to plant and when, and stakes HVST on being right.' },
   { t: 'Action', d: 'Cooperatives follow the farming plan and receive inputs in the right planting window.' },
   { t: 'Proof', d: 'The cooperative records every delivery. A second signer confirms it on the ledger.' },
-  { t: 'Reward', d: 'Buyers pay into escrow, farmers are paid by their share, and playbooks that beat the district baseline earn HVST.' },
+  { t: 'Reward', d: 'Buyers pay into escrow, farmers are paid by their share, and farming plans that beat the district baseline earn HVST.' },
 ];
 
 export default function Home() {
