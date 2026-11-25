@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAccount, useReadContract, useReadContracts, useWatchContractEvent } from 'wagmi';
 import {
   BATCH_STATUS, CONTRACTS, CROPS, DEPLOYER, addressMemberKey, erc20Abi, ledgerAbi,
   mockRwfAbi, registryAbi, seasonId, seasonLabel, short, voucherAbi,
 } from '../lib/contracts';
+import { readFromNeon, syncToNeon } from '../lib/walletStorage';
 import { useBatches, useDeliveries } from '../hooks/useLedger';
 import DistrictSelect from '../components/DistrictSelect';
 import PayoutSplit from '../components/PayoutSplit';
@@ -30,6 +31,7 @@ export default function CooperativePage() {
   const [tab, setTab] = useState<Tab>('overview');
   const [manualId, setManualId] = useState('1');
   const [officers, setOfficers] = useState<string[]>([]);
+  const [memberWallets, setMemberWallets] = useState<string[]>([]);
 
   const { data: myId, refetch: refetchMine } = useReadContract({
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair', args: [address!], query: { enabled: !!address },
@@ -70,6 +72,17 @@ export default function CooperativePage() {
       if (updated.length) setOfficers((prev) => Array.from(new Set([...prev, ...updated])));
     },
   });
+
+  // Load persisted member wallets from Neon keyed by chair wallet + coopId
+  useEffect(() => {
+    if (!exists || !coop) return;
+    readFromNeon<string[]>(coop.chair, `coop:members:${String(coopId)}`, []).then(setMemberWallets);
+  }, [exists, coop?.chair, String(coopId)]);
+
+  const saveMemberWallets = (list: string[]) => {
+    setMemberWallets(list);
+    if (coop) syncToNeon(coop.chair, `coop:members:${String(coopId)}`, list);
+  };
 
   const isChair = !!address && exists && coop!.chair.toLowerCase() === address.toLowerCase();
   const isStaff = isChair || !!officerFlag;
@@ -201,6 +214,43 @@ export default function CooperativePage() {
 
           {exists && (
             <Card>
+              <Heading title="Cooperative roster" hint="Chairperson and registered member wallets for this cooperative." />
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                    <UserCheck size={12} /> Chairperson
+                  </p>
+                  <p className="glass-inner px-3 py-2 font-mono text-xs flex items-center gap-2">
+                    <Wallet size={12} style={{ color: 'var(--rain)' }} />{coop!.chair}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs font-semibold mb-1 flex items-center gap-1" style={{ color: 'var(--muted)' }}>
+                    <Users size={12} /> Members ({memberWallets.length})
+                  </p>
+                  {memberWallets.length === 0
+                    ? <p className="text-xs" style={{ color: 'var(--muted)' }}>No members added yet.</p>
+                    : (
+                      <ul className="space-y-1">
+                        {memberWallets.map((w) => (
+                          <li key={w} className="glass-inner px-3 py-2 font-mono text-xs flex items-center justify-between gap-2">
+                            <span className="flex items-center gap-2"><Wallet size={12} style={{ color: 'var(--terrace)' }} />{w}</span>
+                            {isStaff && (
+                              <TxButton label="Remove" variant="ghost" className="text-xs py-0.5 px-2"
+                                onDone={() => { refreshAll(); saveMemberWallets(memberWallets.filter((x) => x !== w)); }}
+                                steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, addressMemberKey(w), 0] }]} />
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {exists && (
+            <Card>
               <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Enter the member's wallet address. Only its hash is stored on-chain; no personal data touches the blockchain." />
               {!ready ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--sorghum)' }}><AlertTriangle size={13} /> Members can be added once DataSpark verifies this cooperative.</p>
                 : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p>
@@ -212,7 +262,8 @@ export default function CooperativePage() {
                       </Field>
                       <Field label="Plot size (ha)"><input className="field" type="number" min="0.01" step="0.01" value={plotHa} onChange={(e) => setPlotHa(e.target.value)} /></Field>
                     </div>
-                    <TxButton label="Save member" disabled={!/^0x[a-fA-F0-9]{40}$/.test(memberWallet) || !(Number(plotHa) > 0)} onDone={refreshAll}
+                    <TxButton label="Save member" disabled={!/^0x[a-fA-F0-9]{40}$/.test(memberWallet) || !(Number(plotHa) > 0)}
+                      onDone={() => { refreshAll(); const w = memberWallet.toLowerCase(); if (!memberWallets.includes(w)) saveMemberWallets([...memberWallets, w]); setMemberWallet(''); }}
                       steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, addressMemberKey(memberWallet), Math.round(Number(plotHa) * 100)] }]} />
                   </div>
                 )}
