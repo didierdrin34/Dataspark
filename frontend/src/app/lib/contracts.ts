@@ -80,7 +80,7 @@ export const playbookAbi = parseAbi([
   'function baseline(bytes32,bytes32,uint16) view returns (uint32)',
   'function getPlaybook(uint256) view returns ((address author, string district, bytes32 districtKey, string crop, bytes32 cropKey, uint16 season, string uri, bytes32 dataHash, uint256 stake, uint64 followDeadline, uint64 settleAfter, uint8 status, uint32 followerCount, uint32 totalAres, int256 resultBps, uint32 resultYieldKgHa))',
   'function publish((string district, string crop, uint16 season, string uri, bytes32 dataHash, uint256 stake, uint64 followDeadline, uint64 settleAfter) p) returns (uint256)',
-  'function follow(uint256 id, uint32 areaAres)',
+  'function follow(uint256 id, uint256 coopId, uint32 areaAres)',
   'function settle(uint256 id)',
 ]);
 

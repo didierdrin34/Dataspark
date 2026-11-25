@@ -133,13 +133,14 @@ contract PlaybookRegistry is AccessControl, ReentrancyGuard {
     }
 
     // ---------- cooperatives ----------
-    /// @notice Called by the cooperative chair wallet. District of the coop must match the playbook district.
-    function follow(uint256 id, uint32 areaAres) external {
+    /// @notice Called by any verified staff member (chair or officer) of a cooperative.
+    ///         Caller passes their coopId explicitly; contract verifies they are staff.
+    function follow(uint256 id, uint256 coopId, uint32 areaAres) external {
         Playbook storage pb = _playbooks[id];
         require(pb.author != address(0) && pb.status == Status.Active, "not followable");
         require(block.timestamp <= pb.followDeadline, "follow window closed");
-        uint256 coopId = registry.coopIdOfChair(msg.sender);
-        require(coopId != 0 && registry.isVerifiedActive(coopId), "not a verified coop chair");
+        require(registry.isStaff(coopId, msg.sender), "not coop staff");
+        require(registry.isVerifiedActive(coopId), "coop not verified");
         require(registry.districtKeyOf(coopId) == pb.districtKey, "wrong district");
         require(!hasFollowed[id][coopId], "already following");
         require(areaAres > 0, "area required");

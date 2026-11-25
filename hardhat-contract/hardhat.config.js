@@ -14,6 +14,8 @@ module.exports = {
       url: SEPOLIA_RPC_URL || "",
       chainId: 11155111,
       accounts: PRIVATE_KEY ? [PRIVATE_KEY] : [],
+      timeout: 120000,
+      pollingInterval: 8000,
     },
   },
   etherscan: { apiKey: ETHERSCAN_API_KEY || "" },

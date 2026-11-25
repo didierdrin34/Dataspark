@@ -33,10 +33,8 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair',
     args: [address!], query: { enabled: !!address },
   });
-  // Resolve coopId: auto from chair lookup, or manual input
-  const coopId = (chairCoopId && chairCoopId > 0n)
-    ? chairCoopId
-    : (coopIdInput ? BigInt(coopIdInput) : 0n);
+  const coopId = (chairCoopId && chairCoopId > 0n) ? chairCoopId : (coopIdInput ? BigInt(coopIdInput) : 0n);
+  const isChair = !!chairCoopId && chairCoopId > 0n;
 
   const { data: already } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'hasFollowed',
@@ -48,10 +46,7 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
 
   const active = pb.status === 0;
   const withinWindow = now <= Number(pb.followDeadline);
-  const isChair = !!chairCoopId && chairCoopId > 0n;
-  // Show manual input only for non-chairs
   const showCoopInput = active && withinWindow && !!address && !isChair;
-  // Show follow UI whenever we have a coopId and haven't followed yet
   const canFollow = active && withinWindow && !!address && coopId > 0n && !already;
   const canSettle = active && now >= Number(pb.settleAfter);
   const bps = Number(pb.resultBps) / 100;
@@ -123,7 +118,7 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
                 <input className="field mt-1 w-28" type="number" min="0.1" step="0.1" value={ha} onChange={(e) => setHa(e.target.value)} />
               </label>
               <TxButton label={`Follow (${days}d left)`} onDone={onChanged}
-                steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, Math.round(Number(ha) * 100)] }]}
+                steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, coopId, Math.round(Number(ha) * 100)] }]}
                 disabled={!(Number(ha) > 0)} />
             </>
           )}

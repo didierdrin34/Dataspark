@@ -6,11 +6,13 @@ const fs = require("fs");
 const path = require("path");
 
 const key = (s) => hre.ethers.keccak256(hre.ethers.toUtf8Bytes(s));
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function deploy(name, ...args) {
   const factory = await hre.ethers.getContractFactory(name);
   const c = await factory.deploy(...args);
   await c.waitForDeployment();
+  await sleep(5000); // avoid in-flight tx limit
   const address = await c.getAddress();
   console.log(`  ${name.padEnd(20)} ${address}`);
   return c;
