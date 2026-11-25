@@ -28,7 +28,6 @@ export function writeWalletData<T>(address: string | undefined, bucket: string, 
   }
 }
 
-/** Sync a bucket value to Neon via the API route. Fire-and-forget. */
 export function syncToNeon(address: string | undefined, bucket: string, value: unknown): void {
   const wallet = normalizeWallet(address);
   if (!wallet) return;
@@ -36,10 +35,9 @@ export function syncToNeon(address: string | undefined, bucket: string, value: u
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ wallet, bucket, value }),
-  }).catch(() => {/* ignore network errors */});
+  }).catch(() => {});
 }
 
-/** Read a bucket value from Neon, falling back to localStorage then fallback. */
 export async function readFromNeon<T>(address: string | undefined, bucket: string, fallback: T): Promise<T> {
   const wallet = normalizeWallet(address);
   if (!wallet) return fallback;
