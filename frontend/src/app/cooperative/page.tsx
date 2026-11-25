@@ -16,7 +16,7 @@ import { Card, Field, Heading, NotDeployed, Pill, TxButton } from '../components
 import {
   Users, UserCheck, ShieldCheck, Truck, Package, Wallet,
   BadgeCheck, AlertTriangle, CheckCircle2, XCircle, ClipboardList,
-  Coins, UserPlus, Building2,
+  Coins, Building2,
 } from 'lucide-react';
 
 const YEAR = new Date().getFullYear();
