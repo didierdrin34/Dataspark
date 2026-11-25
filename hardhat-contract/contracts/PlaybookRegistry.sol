@@ -54,6 +54,7 @@ contract PlaybookRegistry is AccessControl, ReentrancyGuard {
     struct Follow {
         uint256 coopId;
         uint32 areaAres;
+        address recordedBy; // wallet that registered the follow (any wallet may do it)
     }
 
     uint256 public constant MAX_REWARD_BPS = 5000; // reward / slash capped at 50% of stake
@@ -77,7 +78,7 @@ contract PlaybookRegistry is AccessControl, ReentrancyGuard {
     mapping(bytes32 => mapping(bytes32 => mapping(uint16 => uint32))) public baseline;
 
     event PlaybookPublished(uint256 indexed id, address indexed author, string district, string crop, uint16 season, uint256 stake);
-    event PlaybookFollowed(uint256 indexed id, uint256 indexed coopId, uint32 areaAres);
+    event PlaybookFollowed(uint256 indexed id, uint256 indexed coopId, uint32 areaAres, address indexed follower);
     event BaselineSet(bytes32 indexed districtKey, bytes32 indexed cropKey, uint16 season, uint32 kgPerHa);
     event PlaybookSettled(uint256 indexed id, Status status, int256 resultBps, uint256 reward, uint256 slashed);
 
@@ -133,22 +134,28 @@ contract PlaybookRegistry is AccessControl, ReentrancyGuard {
     }
 
     // ---------- cooperatives ----------
-    /// @notice Called by any verified staff member (chair or officer) of a cooperative.
-    ///         Caller passes their coopId explicitly; contract verifies they are staff.
+    /// @notice Adopts a farming plan for a cooperative. ANY connected wallet may call this: a farmer, an officer,
+    ///         the chairperson or a DataSpark admin. The caller passes the cooperative id explicitly; the contract
+    ///         only checks that the cooperative is real (verified + active) and in the plan's district. Following is
+    ///         tracked per cooperative, so the same cooperative cannot be counted twice.
     function follow(uint256 id, uint256 coopId, uint32 areaAres) external {
         Playbook storage pb = _playbooks[id];
         require(pb.author != address(0) && pb.status == Status.Active, "not followable");
         require(block.timestamp <= pb.followDeadline, "follow window closed");
-        require(registry.isStaff(coopId, msg.sender), "not coop staff");
-        require(registry.isVerifiedActive(coopId), "coop not verified");
+        require(coopId != 0 && registry.isVerifiedActive(coopId), "coop not verified");
         require(registry.districtKeyOf(coopId) == pb.districtKey, "wrong district");
         require(!hasFollowed[id][coopId], "already following");
         require(areaAres > 0, "area required");
         hasFollowed[id][coopId] = true;
-        _followers[id].push(Follow(coopId, areaAres));
+        _followers[id].push(Follow(coopId, areaAres, msg.sender));
         pb.followerCount += 1;
         pb.totalAres += areaAres;
-        emit PlaybookFollowed(id, coopId, areaAres);
+        emit PlaybookFollowed(id, coopId, areaAres, msg.sender);
+    }
+
+    /// @notice Cooperative ids that already adopted this plan, so clients can tell who is following what.
+    function followersOf(uint256 id) external view returns (Follow[] memory) {
+        return _followers[id];
     }
 
     // ---------- settlement ----------
@@ -201,9 +208,5 @@ contract PlaybookRegistry is AccessControl, ReentrancyGuard {
     // ---------- views ----------
     function getPlaybook(uint256 id) external view returns (Playbook memory) {
         return _playbooks[id];
-    }
-
-    function followersOf(uint256 id) external view returns (Follow[] memory) {
-        return _followers[id];
     }
 }

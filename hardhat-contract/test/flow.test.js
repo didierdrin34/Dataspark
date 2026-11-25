@@ -115,6 +115,26 @@ describe("CooperativeRegistry", () => {
     await reg.connect(chair1).setMember(id, key("F1"), 0);
     expect(await reg.memberCount(id)).to.equal(0n);
   });
+
+  it("any wallet can list every cooperative, not just its own", async () => {
+    const { reg, admin, chair1, chair2, buyer } = await deploy();
+    await reg.connect(chair1).registerCooperative("Twigire", "Nyagatare");
+    await reg.connect(chair2).registerCooperative("Koperative", "Kigali");
+    const ids = (await reg.listCooperatives()).map((c) => c.id);
+    expect(ids).to.deep.equal([1n, 2n]);
+    expect(await reg.cooperativeCount()).to.equal(2n);
+    // the deployer's wallet is chair of nothing, yet it sees both cooperatives
+    expect(await reg.coopIdOfChair(admin.address)).to.equal(0n);
+    expect(await reg.listCooperativesFrom(2)).to.have.length(1);
+    // any third wallet reads the same directory
+    expect(await reg.connect(buyer).listCooperatives()).to.have.length(2);
+  });
+
+  it("only DataSpark admins pass isAdmin", async () => {
+    const { reg, admin, chair1 } = await deploy();
+    expect(await reg.isAdmin(admin.address)).to.equal(true);
+    expect(await reg.isAdmin(chair1.address)).to.equal(false);
+  });
 });
 
 // ── HarvestLedger ─────────────────────────────────────────────────────────────
@@ -168,6 +188,26 @@ describe("HarvestLedger", () => {
     await ledger.connect(chair1).confirmDelivery(1n);
     await ledger.connect(officer).sealBatch(1n);
     expect((await ledger.getBatch(1n)).status).to.equal(1n);
+  });
+
+  it("DataSpark admin can approve deliveries and seal another cooperative's batch", async () => {
+    const { ledger, admin, chair1, coopId } = await setupCoop();
+    // the chair records its own delivery: normally nobody else can approve except a second signer
+    await ledger.connect(chair1).createBatch(coopId, "maize", 20261);
+    await ledger.connect(chair1).recordDelivery(1n, key("F1"), 400, 1);
+    await ledger.connect(admin).confirmDelivery(1n);
+    expect((await ledger.getDelivery(1n)).confirmed).to.equal(true);
+    await ledger.connect(admin).sealBatch(1n);
+    expect((await ledger.getBatch(1n)).status).to.equal(1n);
+    expect((await ledger.getBatch(1n)).totalKg).to.equal(400n);
+  });
+
+  it("ordinary wallets still cannot approve or seal", async () => {
+    const { ledger, chair1, buyer, coopId } = await setupCoop();
+    await ledger.connect(chair1).createBatch(coopId, "maize", 20261);
+    await ledger.connect(chair1).recordDelivery(1n, key("F1"), 400, 1);
+    await expect(ledger.connect(buyer).confirmDelivery(1n)).to.be.revertedWith("only chair");
+    await expect(ledger.connect(buyer).sealBatch(1n)).to.be.revertedWith("not staff");
   });
 
   it("buyer funds escrow and releases with correct kg split", async () => {
@@ -296,24 +336,45 @@ describe("PlaybookRegistry", () => {
   });
 
   it("cooperative chair can follow in matching district", async () => {
-    const { pb, chair1 } = await setupWithPlaybook();
-    await pb.connect(chair1).follow(1n, 100);
+    const { pb, chair1, id1 } = await setupWithPlaybook();
+    await pb.connect(chair1).follow(1n, id1, 100);
     const p = await pb.getPlaybook(1n);
     expect(p.followerCount).to.equal(1n);
     expect(p.totalAres).to.equal(100n);
   });
 
+  it("any wallet can follow a plan for a verified cooperative", async () => {
+    const { pb, buyer, chair2, id2 } = await setupWithPlaybook();
+    // a farmer / buyer wallet that is neither chair nor officer nor admin
+    await pb.connect(buyer).follow(1n, id2, 50);
+    const p = await pb.getPlaybook(1n);
+    expect(p.followerCount).to.equal(1n);
+    expect(p.totalAres).to.equal(50n);
+    expect((await pb.followersOf(1n))[0].recordedBy).to.equal(buyer.address);
+    // the chair of the same cooperative cannot double-count the same cooperative
+    await expect(pb.connect(chair2).follow(1n, id2, 50))
+      .to.be.revertedWith("already following");
+  });
+
+  it("cannot follow for an unverified cooperative", async () => {
+    const { reg, pb, buyer } = await setupWithPlaybook();
+    await reg.connect(buyer).registerCooperative("Unverified", "Nyagatare");
+    const freshId = await reg.coopIdOfChair(buyer.address);
+    await expect(pb.connect(buyer).follow(1n, freshId, 50))
+      .to.be.revertedWith("coop not verified");
+  });
+
   it("cannot follow after follow deadline", async () => {
-    const { pb, chair1 } = await setupWithPlaybook();
+    const { pb, chair1, id1 } = await setupWithPlaybook();
     await time.increase(1001);
-    await expect(pb.connect(chair1).follow(1n, 100))
+    await expect(pb.connect(chair1).follow(1n, id1, 100))
       .to.be.revertedWith("follow window closed");
   });
 
   it("cannot follow same playbook twice", async () => {
-    const { pb, chair1 } = await setupWithPlaybook();
-    await pb.connect(chair1).follow(1n, 100);
-    await expect(pb.connect(chair1).follow(1n, 100))
+    const { pb, chair1, id1 } = await setupWithPlaybook();
+    await pb.connect(chair1).follow(1n, id1, 100);
+    await expect(pb.connect(chair1).follow(1n, id1, 100))
       .to.be.revertedWith("already following");
   });
 
@@ -331,7 +392,7 @@ describe("PlaybookRegistry", () => {
 
   it("settles Neutral when yield misses baseline by <=10%", async () => {
     const { pb, ledger, rwf, officer, chair1, buyer, id1 } = await setupWithPlaybook();
-    await pb.connect(chair1).follow(1n, 100);
+    await pb.connect(chair1).follow(1n, id1, 100);
     // lower minFollowers to 1 so we can settle with one coop
     await pb.setParams(ethers.parseEther("100"), 1, await pb.insurancePool());
     await ledger.connect(officer).createBatch(id1, "maize", 20261);
@@ -350,8 +411,8 @@ describe("PlaybookRegistry", () => {
 
   it("settles Rewarded when yield beats baseline", async () => {
     const { pb, ledger, rwf, officer, chair1, chair2, buyer, author, hvst, id1, id2 } = await setupWithPlaybook();
-    await pb.connect(chair1).follow(1n, 100);
-    await pb.connect(chair2).follow(1n, 100);
+    await pb.connect(chair1).follow(1n, id1, 100);
+    await pb.connect(chair2).follow(1n, id2, 100);
     // coop1: 2400kg, coop2: 2000kg => 4400/2ha = 2200 vs 2000 = +10%
     await ledger.connect(officer).createBatch(id1, "maize", 20261);
     await ledger.connect(officer).recordDelivery(1n, key("F1"), 2400, 1);
@@ -384,8 +445,8 @@ describe("PlaybookRegistry", () => {
 
   it("slashes stake when yield misses baseline by >10%", async () => {
     const { pb, ledger, rwf, officer, chair1, chair2, buyer, author, hvst, id1, id2 } = await setupWithPlaybook();
-    await pb.connect(chair1).follow(1n, 100);
-    await pb.connect(chair2).follow(1n, 100);
+    await pb.connect(chair1).follow(1n, id1, 100);
+    await pb.connect(chair2).follow(1n, id2, 100);
     // 750+750 / 2ha = 750 kg/ha vs 2000 = -62.5% -> slash capped at 50%
     await ledger.connect(officer).createBatch(id1, "maize", 20261);
     await ledger.connect(officer).recordDelivery(1n, key("F1"), 750, 1);
@@ -539,8 +600,8 @@ describe("Full season end-to-end", () => {
       settleAfter: now + 2000,
     });
     await pb.setBaseline(key("Nyagatare"), key("maize"), 20261, 2000);
-    await pb.connect(chair1).follow(1n, 100);
-    await pb.connect(chair2).follow(1n, 100);
+    await pb.connect(chair1).follow(1n, id1, 100);
+    await pb.connect(chair2).follow(1n, id2, 100);
 
     // Coop1: F1=600kg, F2=400kg -> 1000kg total
     await ledger.connect(officer).createBatch(id1, "maize", 20261);

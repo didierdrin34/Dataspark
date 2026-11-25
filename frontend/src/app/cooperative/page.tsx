@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useAccount, useReadContract, useReadContracts, useWatchContractEvent } from 'wagmi';
 import {
-  BATCH_STATUS, CONTRACTS, CROPS, DEPLOYER, addressMemberKey, erc20Abi, ledgerAbi,
+  BATCH_STATUS, CONTRACTS, CROPS, addressMemberKey, erc20Abi, ledgerAbi,
   mockRwfAbi, registryAbi, seasonId, seasonLabel, short, voucherAbi,
 } from '../lib/contracts';
 import { readFromNeon, syncToNeon } from '../lib/walletStorage';
 import { useBatches, useDeliveries } from '../hooks/useLedger';
+import { useRegistryRoles } from '../hooks/useCooperatives';
+import CooperativePicker from '../components/CooperativePicker';
 import DistrictSelect from '../components/DistrictSelect';
 import PayoutSplit from '../components/PayoutSplit';
 import { Card, Field, Heading, NotDeployed, Pill, TxButton } from '../components/ui';
@@ -29,14 +31,15 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
 export default function CooperativePage() {
   const { address } = useAccount();
   const [tab, setTab] = useState<Tab>('overview');
-  const [manualId, setManualId] = useState('1');
+  /** Cooperative the wallet is looking at. Defaults to the one it chairs; any wallet may pick another. */
+  const [pickedId, setPickedId] = useState<bigint | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
   const [officers, setOfficers] = useState<string[]>([]);
   const [memberWallets, setMemberWallets] = useState<string[]>([]);
 
-  const { data: myId, refetch: refetchMine } = useReadContract({
-    address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair', args: [address!], query: { enabled: !!address },
-  });
-  const coopId = myId && myId > 0n ? myId : BigInt(Number(manualId) > 0 ? Number(manualId) : 0);
+  const { chairedCoopId, isAdmin, refetch: refetchRoles } = useRegistryRoles(address);
+  const myId = chairedCoopId;
+  const coopId = pickedId ?? (myId > 0n ? myId : 0n);
 
   const { data: coopRaw, refetch: refetchCoop } = useReadContract({
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'getCooperative', args: [coopId], query: { enabled: coopId > 0n },
@@ -86,16 +89,18 @@ export default function CooperativePage() {
 
   const isChair = !!address && exists && coop!.chair.toLowerCase() === address.toLowerCase();
   const isStaff = isChair || !!officerFlag;
-  const isAdmin = !!address && address.toLowerCase() === DEPLOYER.toLowerCase();
+  /** Cooperative staff or DataSpark staff: both may record, approve and seal on any cooperative. */
+  const canOperate = isStaff || isAdmin;
   const ready = exists && coop!.verified && coop!.active;
-  const role = isChair ? 'Chairperson' : officerFlag ? 'Officer' : 'Viewer';
+  const role = isChair ? 'Chairperson' : officerFlag ? 'Officer' : isAdmin ? 'DataSpark admin' : 'Viewer';
+  const myCoopIds = myId > 0n ? [myId] : [];
   const members = (stats as any)?.[0]?.result as bigint | undefined;
   const score = (stats as any)?.[1]?.result as bigint | undefined;
   const twoSigner = (stats as any)?.[2]?.result as boolean | undefined;
 
   const batches = useBatches(exists ? coopId : undefined);
   const deliveries = useDeliveries(batches.items.map((b) => b.id));
-  const refreshAll = () => { refetchCoop(); refetchMine(); refetchStats(); batches.refetch(); deliveries.refetch(); };
+  const refreshAll = () => { refetchCoop(); refetchRoles(); refetchStats(); batches.refetch(); deliveries.refetch(); };
 
   const [name, setName] = useState('');
   const [district, setDistrict] = useState('Nyagatare');
@@ -156,13 +161,27 @@ export default function CooperativePage() {
             {exists && <Pill tone={coop!.verified ? 'terrace' : 'sorghum'}>{coop!.verified ? <span className="flex items-center gap-1"><BadgeCheck size={11} /> Verified</span> : <span className="flex items-center gap-1"><AlertTriangle size={11} /> Awaiting verification</span>}</Pill>}
             {exists && <Pill tone="rain"><span className="flex items-center gap-1"><UserCheck size={11} />{role}</span></Pill>}
             {score !== undefined && <Pill tone="sorghum">Score {String(score)}</Pill>}
-            {!myId || myId === 0n ? (
-              <label className="text-sm flex items-center gap-1">Cooperative #
-                <input className="field ml-2 inline-block w-20" type="number" min="1" value={manualId} onChange={(e) => setManualId(e.target.value)} />
-              </label>
-            ) : null}
+            <button
+              type="button"
+              onClick={() => setShowPicker((v) => !v)}
+              className="btn btn-ghost text-sm"
+              aria-expanded={showPicker}
+            >
+              <Building2 size={13} className="mr-1 inline" /> {showPicker ? 'Hide directory' : 'Browse cooperatives'}
+            </button>
           </div>
         </div>
+
+        {(showPicker || !exists) && (
+          <div className="mt-4 pt-4" style={{ borderTop: '1px solid var(--panel-line)' }}>
+            <CooperativePicker
+              value={coopId}
+              onChange={(id) => { setPickedId(id); setShowPicker(false); setOfficers([]); }}
+              mine={myCoopIds}
+              label="Every cooperative on chain"
+            />
+          </div>
+        )}
 
         {exists && twoSigner === false && (
           <p className="mt-3 text-xs flex items-center gap-1" style={{ color: 'var(--sorghum)' }}>
@@ -235,7 +254,7 @@ export default function CooperativePage() {
                         {memberWallets.map((w) => (
                           <li key={w} className="glass-inner px-3 py-2 font-mono text-xs flex items-center justify-between gap-2">
                             <span className="flex items-center gap-2"><Wallet size={12} style={{ color: 'var(--terrace)' }} />{w}</span>
-                            {isStaff && (
+                            {canOperate && (
                               <TxButton label="Remove" variant="ghost" className="text-xs py-0.5 px-2"
                                 onDone={() => { refreshAll(); saveMemberWallets(memberWallets.filter((x) => x !== w)); }}
                                 steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, addressMemberKey(w), 0] }]} />
@@ -253,7 +272,7 @@ export default function CooperativePage() {
             <Card>
               <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Enter the member's wallet address. Only its hash is stored on-chain; no personal data touches the blockchain." />
               {!ready ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--sorghum)' }}><AlertTriangle size={13} /> Members can be added once DataSpark verifies this cooperative.</p>
-                : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p>
+                : !canOperate ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson, an officer or a DataSpark admin can add members.</p>
                 : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
@@ -270,9 +289,9 @@ export default function CooperativePage() {
             </Card>
           )}
 
-          {isChair && (
+          {(isChair || isAdmin) && (
             <Card>
-              <Heading title="Officers" hint="Officers record deliveries. You, as chairperson, confirm them — that is the second signature." />
+              <Heading title="Officers" hint="Officers record deliveries. The chairperson confirms them — that is the second signature." />
               <div className="space-y-4">
                 <Field label="Officer wallet address">
                   <input className="field font-mono text-sm" value={officer} onChange={(e) => setOfficer(e.target.value)} placeholder="0x…" />
@@ -298,8 +317,8 @@ export default function CooperativePage() {
 
       {tab === 'deliveries' && (
         <div className="space-y-6">
-          {!ready || !isStaff
-            ? <Card><p className="text-sm" style={{ color: 'var(--muted)' }}>{!exists ? 'Select or register a cooperative first.' : !ready ? 'This cooperative is waiting for verification.' : 'Only cooperative staff can record deliveries.'}</p></Card>
+          {!ready || !canOperate
+            ? <Card><p className="text-sm" style={{ color: 'var(--muted)' }}>{!exists ? 'Select or register a cooperative first.' : !ready ? 'This cooperative is waiting for verification.' : 'Only cooperative staff or a DataSpark admin can record deliveries.'}</p></Card>
             : (
               <div className="grid gap-6 md:grid-cols-2">
                 <Card>
@@ -342,10 +361,10 @@ export default function CooperativePage() {
                         ? <Pill tone="storm"><span className="flex items-center gap-1"><XCircle size={11} /> Flagged</span></Pill>
                         : d.confirmed
                           ? <Pill tone="terrace"><span className="flex items-center gap-1"><CheckCircle2 size={11} /> Confirmed</span></Pill>
-                          : isChair
+                          : canOperate
                             ? <TxButton label="Confirm" variant="rain" onDone={refreshAll}
                                 steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'confirmDelivery', args: [d.id] }]} />
-                            : <Pill tone="sorghum">Waiting for chairperson</Pill>}
+                            : <Pill tone="sorghum">Waiting for the cooperative to approve</Pill>}
                     </li>
                   ))}
                 </ul>
@@ -401,8 +420,8 @@ export default function CooperativePage() {
                   </div>
                 )}
 
-                {/* Seal — staff only */}
-                {b.status === 0 && isStaff && (
+                {/* Seal — cooperative staff or a DataSpark admin */}
+                {b.status === 0 && canOperate && (
                   <div className="mt-4">
                     <TxButton label="Seal batch" onDone={refreshAll} disabled={b.pendingDeliveries > 0 || b.totalKg === 0}
                       steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'sealBatch', args: [b.id] }]} />
@@ -431,11 +450,11 @@ export default function CooperativePage() {
                 {/* Release — buyer or chair after timeout */}
                 {b.status === 2 && (
                   <div className="mt-4">
-                    <TxButton label={isBuyer ? 'Confirm receipt & release payment' : 'Release payment (14-day timeout)'} onDone={refreshAll}
-                      disabled={!address || (!isBuyer && !(isChair && timeoutOk))}
+                    <TxButton label={isBuyer ? 'Confirm receipt & release payment' : isAdmin ? 'Release payment (DataSpark admin)' : 'Release payment (14-day timeout)'} onDone={refreshAll}
+                      disabled={!address || (!isBuyer && !isAdmin && !(isChair && timeoutOk))}
                       steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'releaseBatch', args: [b.id] }]} />
-                    {!isBuyer && isChair && !timeoutOk && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>You can release after the 14-day buyer timeout.</p>}
-                    {!isBuyer && !isChair && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Only the buyer or the chairperson (after 14 days) can release.</p>}
+                    {!isBuyer && isChair && !timeoutOk && !isAdmin && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>You can release after the 14-day buyer timeout.</p>}
+                    {!isBuyer && !isChair && !isAdmin && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Only the buyer, the chairperson (after 14 days) or a DataSpark admin can release.</p>}
                   </div>
                 )}
 

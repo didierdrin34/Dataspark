@@ -1,9 +1,13 @@
 'use client';
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { formatUnits } from 'viem';
 import { useAccount, useReadContract } from 'wagmi';
-import { Sprout, Bean, Wheat, Leaf, Coffee, FlaskConical, Droplets, TreePine, TrendingUp, TrendingDown, Minus, Clock, Users } from 'lucide-react';
-import { CONTRACTS, PLAYBOOK_STATUS, playbookAbi, registryAbi, seasonLabel, short, type PlaybookView } from '../lib/contracts';
+import {
+  Sprout, Bean, Wheat, Leaf, Coffee, FlaskConical, Droplets, TreePine,
+  TrendingUp, TrendingDown, Minus, Clock, Users, Building2,
+} from 'lucide-react';
+import { CONTRACTS, PLAYBOOK_STATUS, playbookAbi, seasonLabel, short, type PlaybookView } from '../lib/contracts';
+import { useCooperatives, useRegistryRoles } from '../hooks/useCooperatives';
 import { Pill, TxButton } from './ui';
 
 const tone = (s: number) => (['sorghum', 'terrace', 'mist', 'storm', 'mist'] as const)[s];
@@ -25,29 +29,38 @@ function CropIcon({ crop, size = 28 }: { crop: string; size?: number }) {
 export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView; rank?: number; onChanged?: () => void }) {
   const { address } = useAccount();
   const [ha, setHa] = useState('1');
+  const [coopId, setCoopId] = useState<bigint | null>(null);
   const now = Math.floor(Date.now() / 1000);
 
-  const [coopIdInput, setCoopIdInput] = useState('');
+  const { chairedCoopId } = useRegistryRoles(address);
+  const { verifiedOnly } = useCooperatives();
 
-  const { data: chairCoopId } = useReadContract({
-    address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair',
-    args: [address!], query: { enabled: !!address },
-  });
-  const coopId = (chairCoopId && chairCoopId > 0n) ? chairCoopId : (coopIdInput ? BigInt(coopIdInput) : 0n);
-  const isChair = !!chairCoopId && chairCoopId > 0n;
+  // Only verified, active cooperatives in this plan's district can adopt it (the contract enforces the same rule).
+  const eligible = useMemo(
+    () => verifiedOnly.filter((c) => c.districtKey.toLowerCase() === pb.districtKey.toLowerCase()),
+    [verifiedOnly, pb.districtKey],
+  );
+
+  // Preselect the cooperative this wallet chairs; any other wallet simply picks one from the list.
+  useEffect(() => {
+    if (coopId !== null) return;
+    if (chairedCoopId > 0n && eligible.some((c) => c.id === chairedCoopId)) setCoopId(chairedCoopId);
+    else if (eligible.length === 1) setCoopId(eligible[0].id);
+  }, [chairedCoopId, eligible, coopId]);
 
   const { data: already } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'hasFollowed',
-    args: [pb.id, coopId], query: { enabled: coopId > 0n },
+    args: [pb.id, coopId!], query: { enabled: !!coopId && coopId > 0n },
   });
+
   const { data: score } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'authorScore', args: [pb.author],
   });
 
   const active = pb.status === 0;
   const withinWindow = now <= Number(pb.followDeadline);
-  const showCoopInput = active && withinWindow && !!address && !isChair;
-  const canFollow = active && withinWindow && !!address && coopId > 0n && !already;
+  const open = active && withinWindow;
+  const canFollow = open && !!address && !!coopId && coopId > 0n && !already;
   const canSettle = active && now >= Number(pb.settleAfter);
   const bps = Number(pb.resultBps) / 100;
   const days = Math.max(0, Math.ceil((Number(pb.followDeadline) - now) / 86400));
@@ -98,13 +111,30 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
         Steps: {pb.uri.startsWith('http') ? <a className="underline" style={{ color: 'var(--rain)' }} href={pb.uri} target="_blank" rel="noreferrer">{pb.uri}</a> : pb.uri}
       </p>
 
-      {showCoopInput && (
+      {open && !!address && (
         <div className="mt-3">
-          <label className="text-xs flex items-center gap-2" style={{ color: 'var(--muted)' }}>
-            Your cooperative #
-            <input className="field inline-block w-20" type="number" min="1" value={coopIdInput}
-              onChange={(e) => setCoopIdInput(e.target.value)} placeholder="1" />
+          <label className="block text-xs" style={{ color: 'var(--muted)' }}>
+            <span className="flex items-center gap-1 mb-1"><Building2 size={11} /> Following cooperative</span>
+            <select
+              className="field text-sm"
+              value={coopId !== null ? String(coopId) : ''}
+              onChange={(e) => setCoopId(e.target.value ? BigInt(e.target.value) : null)}
+              aria-label="Cooperative adopting this plan"
+            >
+              <option value="">Select a cooperative…</option>
+              {eligible.map((c) => (
+                <option key={String(c.id)} value={String(c.id)}>#{String(c.id)} {c.name} · {c.district}</option>
+              ))}
+            </select>
           </label>
+          {eligible.length === 0 && (
+            <p className="mt-1 text-xs" style={{ color: 'var(--sorghum)' }}>
+              No verified cooperative in {pb.district} yet. DataSpark verifies cooperatives before they can follow a plan.
+            </p>
+          )}
+          {!!coopId && already && (
+            <p className="mt-1 text-xs" style={{ color: 'var(--terrace)' }}>This cooperative already follows this plan.</p>
+          )}
         </div>
       )}
 
@@ -118,7 +148,7 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
                 <input className="field mt-1 w-28" type="number" min="0.1" step="0.1" value={ha} onChange={(e) => setHa(e.target.value)} />
               </label>
               <TxButton label={`Follow (${days}d left)`} onDone={onChanged}
-                steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, coopId, Math.round(Number(ha) * 100)] }]}
+                steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, coopId!, Math.round(Number(ha) * 100)] }]}
                 disabled={!(Number(ha) > 0)} />
             </>
           )}
@@ -128,7 +158,10 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
           )}
         </div>
       )}
-      <p className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>Advice, not a guarantee. Results are measured against the district baseline.</p>
+      <p className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>
+        {open && !!address ? 'Any wallet may record the follow on behalf of a verified cooperative. ' : ''}
+        Advice, not a guarantee. Results are measured against the district baseline.
+      </p>
     </article>
   );
 }

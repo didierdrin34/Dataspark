@@ -99,8 +99,9 @@ contract HarvestLedger is AccessControl, ReentrancyGuard {
     }
 
     // ---------- cooperative staff ----------
+    /// @notice Cooperative staff (chair or officer) or a DataSpark admin can open a batch.
     function createBatch(uint256 coopId, string calldata crop, uint16 season) external returns (uint256 id) {
-        require(registry.isStaff(coopId, msg.sender), "not staff");
+        require(registry.isStaff(coopId, msg.sender) || registry.isAdmin(msg.sender), "not staff");
         require(registry.isVerifiedActive(coopId), "coop not verified");
         require(bytes(crop).length > 0 && season > 0, "bad crop/season");
         id = ++batchCount;
@@ -115,7 +116,7 @@ contract HarvestLedger is AccessControl, ReentrancyGuard {
     function recordDelivery(uint256 batchId, bytes32 memberId, uint32 kg, uint8 grade) external returns (uint256 id) {
         Batch storage b = _batches[batchId];
         require(b.coopId != 0, "unknown batch");
-        require(registry.isStaff(b.coopId, msg.sender), "not staff");
+        require(registry.isStaff(b.coopId, msg.sender) || registry.isAdmin(msg.sender), "not staff");
         require(b.status == BatchStatus.Open, "batch not open");
         require(registry.memberPlotAres(b.coopId, memberId) > 0, "not a member");
         require(kg > 0 && grade >= 1 && grade <= 3, "bad kg/grade");
@@ -125,15 +126,18 @@ contract HarvestLedger is AccessControl, ReentrancyGuard {
         emit DeliveryRecorded(id, batchId, memberId, kg, grade);
     }
 
-    /// @notice Second signature: only the cooperative chair can confirm, and (if required) not the same wallet that recorded it.
+    /// @notice Approves a delivery. The cooperative chair (second signature) can approve, as can one of its officers
+    ///         or a DataSpark admin. When the two-signer rule is on, the wallet that recorded the delivery cannot also
+    ///         approve it — DataSpark admins are exempt so they can unblock a cooperative that has only one wallet.
     function confirmDelivery(uint256 deliveryId) external {
         Delivery storage d = _deliveries[deliveryId];
         require(d.batchId != 0, "unknown delivery");
         Batch storage b = _batches[d.batchId];
-        require(registry.chairOf(b.coopId) == msg.sender, "only chair");
+        bool admin = registry.isAdmin(msg.sender);
+        require(registry.isStaff(b.coopId, msg.sender) || admin, "only chair");
         require(!d.confirmed && !d.flagged, "already handled");
         require(b.status == BatchStatus.Open, "batch not open");
-        if (twoSignerRequired) require(d.recordedBy != msg.sender, "needs second signer");
+        if (twoSignerRequired && !admin) require(d.recordedBy != msg.sender, "needs second signer");
 
         d.confirmed = true;
         b.pendingDeliveries -= 1;
@@ -148,9 +152,10 @@ contract HarvestLedger is AccessControl, ReentrancyGuard {
         emit DeliveryConfirmed(deliveryId, msg.sender);
     }
 
+    /// @notice Seals a batch once every delivery in it is approved: cooperative staff or a DataSpark admin.
     function sealBatch(uint256 batchId) external {
         Batch storage b = _batches[batchId];
-        require(b.coopId != 0 && registry.isStaff(b.coopId, msg.sender), "not staff");
+        require(b.coopId != 0 && (registry.isStaff(b.coopId, msg.sender) || registry.isAdmin(msg.sender)), "not staff");
         require(b.status == BatchStatus.Open, "not open");
         require(b.pendingDeliveries == 0, "unconfirmed deliveries");
         require(b.totalKg > 0, "empty batch");
@@ -172,13 +177,15 @@ contract HarvestLedger is AccessControl, ReentrancyGuard {
     }
 
     /// @notice Buyer confirms receipt. If the buyer stays silent for 14 days the cooperative chair can release it
-    ///         (protects farmers from late payment games).
+    ///         (protects farmers from late payment games). DataSpark admins can release at any time to arbitrate.
     function releaseBatch(uint256 batchId) external nonReentrant {
         Batch storage b = _batches[batchId];
         require(b.status == BatchStatus.Funded, "not funded");
         address chair = registry.chairOf(b.coopId);
         require(
-            msg.sender == b.buyer || (msg.sender == chair && block.timestamp >= uint256(b.fundedAt) + RELEASE_TIMEOUT),
+            msg.sender == b.buyer ||
+                registry.isAdmin(msg.sender) ||
+                (msg.sender == chair && block.timestamp >= uint256(b.fundedAt) + RELEASE_TIMEOUT),
             "not allowed yet"
         );
         require(b.totalKg > 0, "no verified kg: ask admin to refund");

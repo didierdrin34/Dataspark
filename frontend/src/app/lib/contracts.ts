@@ -36,13 +36,18 @@ export const mockRwfAbi = parseAbi([
   'function lastDrip(address) view returns (uint256)',
 ]);
 
+const COOP_INFO = '(uint256 id, string name, string district, bytes32 districtKey, address chair, bool verified, bool active, uint256 members)';
+
 export const registryAbi = parseAbi([
   'function cooperativeCount() view returns (uint256)',
   'function coopIdOfChair(address) view returns (uint256)',
   'function isOfficer(uint256,address) view returns (bool)',
+  'function isAdmin(address) view returns (bool)',
   'function memberCount(uint256) view returns (uint256)',
   'function memberPlotAres(uint256,bytes32) view returns (uint32)',
   'function getCooperative(uint256) view returns ((string name, string district, bytes32 districtKey, address chair, bool verified, bool active))',
+  `function listCooperatives() view returns (${COOP_INFO}[])`,
+  `function listCooperativesFrom(uint256 fromId) view returns (${COOP_INFO}[])`,
   'function registerCooperative(string name, string district) returns (uint256)',
   'function verifyCooperative(uint256 id, bool verified)',
   'function setActive(uint256 id, bool active)',
@@ -81,6 +86,7 @@ export const playbookAbi = parseAbi([
   'function getPlaybook(uint256) view returns ((address author, string district, bytes32 districtKey, string crop, bytes32 cropKey, uint16 season, string uri, bytes32 dataHash, uint256 stake, uint64 followDeadline, uint64 settleAfter, uint8 status, uint32 followerCount, uint32 totalAres, int256 resultBps, uint32 resultYieldKgHa))',
   'function publish((string district, string crop, uint16 season, string uri, bytes32 dataHash, uint256 stake, uint64 followDeadline, uint64 settleAfter) p) returns (uint256)',
   'function follow(uint256 id, uint256 coopId, uint32 areaAres)',
+  'function followersOf(uint256 id) view returns ((uint256 coopId, uint32 areaAres, address recordedBy)[])',
   'function settle(uint256 id)',
 ]);
 
@@ -94,6 +100,12 @@ export interface PlaybookView {
   crop: string; cropKey: `0x${string}`; season: number; uri: string; dataHash: `0x${string}`;
   stake: bigint; followDeadline: bigint; settleAfter: bigint; status: number;
   followerCount: number; totalAres: number; resultBps: bigint; resultYieldKgHa: number;
+}
+
+/** One row of the on-chain cooperative directory (`listCooperatives`). */
+export interface CoopInfo {
+  id: bigint; name: string; district: string; districtKey: `0x${string}`;
+  chair: Address; verified: boolean; active: boolean; members: bigint;
 }
 
 export interface BatchView {
