@@ -1,19 +1,45 @@
 @import "tailwindcss";
 
+/* ── Dark mode (default) ── */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
-
-  /* DataSpark theme tokens */
-  --night: #0c1b1f;      /* Virunga night */
+  --background: #0c1b1f;
+  --foreground: #e8f1ec;
+  --night: #0c1b1f;
   --panel: rgba(21, 50, 58, 0.62);
   --panel-line: rgba(168, 214, 205, 0.16);
-  --rain: #5cc8e8;       /* climate data */
-  --terrace: #8fd16b;    /* growth / healthy */
-  --sorghum: #e8b04a;    /* HVST / value */
-  --storm: #f0715a;      /* risk */
+  --rain: #5cc8e8;
+  --terrace: #8fd16b;
+  --sorghum: #e8b04a;
+  --storm: #f0715a;
   --mist: #e8f1ec;
   --muted: #9db4b0;
+  --glass-bg: rgba(21, 50, 58, 0.62);
+  --glass-inner-bg: rgba(8, 24, 28, 0.55);
+  --field-bg: rgba(6, 20, 24, 0.7);
+  --btn-ghost-bg: rgba(232, 241, 236, 0.07);
+  --btn-ghost-hover: rgba(232, 241, 236, 0.14);
+  --navbar-bg: rgba(12, 27, 31, 0.82);
+}
+
+/* ── Light mode ── */
+[data-theme="light"] {
+  --background: #f0f7f5;
+  --foreground: #0c1b1f;
+  --night: #f0f7f5;
+  --panel: rgba(255, 255, 255, 0.82);
+  --panel-line: rgba(12, 80, 80, 0.14);
+  --rain: #0e8fb5;
+  --terrace: #3a8a1e;
+  --sorghum: #b07010;
+  --storm: #c0391e;
+  --mist: #0c1b1f;
+  --muted: #4a7070;
+  --glass-bg: rgba(255, 255, 255, 0.82);
+  --glass-inner-bg: rgba(220, 240, 235, 0.7);
+  --field-bg: rgba(230, 245, 240, 0.9);
+  --btn-ghost-bg: rgba(12, 27, 31, 0.07);
+  --btn-ghost-hover: rgba(12, 27, 31, 0.13);
+  --navbar-bg: rgba(240, 247, 245, 0.92);
 }
 
 @theme inline {
@@ -27,10 +53,15 @@ html {
   color-scheme: dark;
 }
 
+[data-theme="light"] {
+  color-scheme: light;
+}
+
 body {
-  background: var(--night);
-  color: var(--mist);
+  background: var(--background);
+  color: var(--foreground);
   font-family: var(--font-body), Arial, Helvetica, sans-serif;
+  transition: background 0.2s ease, color 0.2s ease;
 }
 
 .text-gradient {
@@ -38,7 +69,6 @@ body {
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  /* text-shadow: 2px 2px 4px rgba(255, 255, 255, 0.8); #6b21a8 */
 }
 
 .font-display {
@@ -47,7 +77,7 @@ body {
 }
 
 .glass {
-  background: var(--panel);
+  background: var(--glass-bg);
   border: 1px solid var(--panel-line);
   border-radius: 20px;
   backdrop-filter: blur(14px);
@@ -55,7 +85,7 @@ body {
 }
 
 .glass-inner {
-  background: rgba(8, 24, 28, 0.55);
+  background: var(--glass-inner-bg);
   border: 1px solid var(--panel-line);
   border-radius: 14px;
 }
@@ -64,9 +94,9 @@ body {
   width: 100%;
   padding: 0.6rem 0.8rem;
   border-radius: 12px;
-  background: rgba(6, 20, 24, 0.7);
+  background: var(--field-bg);
   border: 1px solid var(--panel-line);
-  color: var(--mist);
+  color: var(--foreground);
 }
 
 .field:focus-visible,
@@ -88,38 +118,21 @@ a:focus-visible {
   transition: transform 0.12s ease, background 0.12s ease, opacity 0.12s ease;
 }
 
-.btn:active {
-  transform: translateY(1px);
-}
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
 
-.btn:disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.btn-primary {
-  background: var(--sorghum);
-  color: #23190a;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: #f2c26a;
-}
+.btn-primary { background: var(--sorghum); color: #fff; }
+.btn-primary:hover:not(:disabled) { opacity: 0.88; }
 
 .btn-ghost {
-  background: rgba(232, 241, 236, 0.07);
-  color: var(--mist);
+  background: var(--btn-ghost-bg);
+  color: var(--foreground);
   border: 1px solid var(--panel-line);
 }
+.btn-ghost:hover:not(:disabled) { background: var(--btn-ghost-hover); }
 
-.btn-ghost:hover:not(:disabled) {
-  background: rgba(232, 241, 236, 0.14);
-}
-
-.btn-rain {
-  background: var(--rain);
-  color: #06222b;
-}
+.btn-rain { background: var(--rain); color: #06222b; }
+.btn-rain:hover:not(:disabled) { opacity: 0.88; }
 
 .hero-glow {
   background:
@@ -127,23 +140,18 @@ a:focus-visible {
     radial-gradient(50% 45% at 8% 30%, rgba(143, 209, 107, 0.16), transparent 70%);
 }
 
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+[data-theme="light"] .hero-glow {
+  background:
+    radial-gradient(60% 50% at 78% 12%, rgba(14, 143, 181, 0.12), transparent 70%),
+    radial-gradient(50% 45% at 8% 30%, rgba(58, 138, 30, 0.10), transparent 70%);
 }
 
-.rise {
-  animation: rise 0.7s ease both;
+@keyframes rise {
+  from { opacity: 0; transform: translateY(14px); }
+  to   { opacity: 1; transform: none; }
 }
+.rise { animation: rise 0.7s ease both; }
 
 @media (prefers-reduced-motion: reduce) {
-  .rise {
-    animation: none;
-  }
+  .rise { animation: none; }
 }

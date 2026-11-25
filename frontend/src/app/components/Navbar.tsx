@@ -2,7 +2,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAccount } from 'wagmi';
+import { Sun, Moon, Bell, User, Sprout } from 'lucide-react';
 import WalletButton from './WalletButton';
+import { useTheme } from './ThemeProvider';
 
 const LINKS = [
   { href: '/', label: 'Climate' },
@@ -13,12 +15,14 @@ const LINKS = [
 export default function Navbar() {
   const pathname = usePathname();
   const { address } = useAccount();
+  const { theme, toggle } = useTheme();
 
   return (
-    <header className="sticky top-0 z-40" style={{ background: 'rgba(12,27,31,0.82)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--panel-line)' }}>
+    <header className="sticky top-0 z-40" style={{ background: 'var(--navbar-bg)', backdropFilter: 'blur(12px)', borderBottom: '1px solid var(--panel-line)' }}>
       <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-3">
         <div className="flex items-center gap-8">
-          <Link href="/" className="font-display text-2xl font-extrabold" style={{ color: 'var(--mist)' }}>
+          <Link href="/" className="flex items-center gap-2 font-display text-2xl font-extrabold" style={{ color: 'var(--mist)' }}>
+            <Sprout size={22} style={{ color: 'var(--rain)' }} />
             Data<span style={{ color: 'var(--rain)' }}>Spark</span>
           </Link>
           <nav className="flex gap-1" aria-label="Main">
@@ -32,14 +36,19 @@ export default function Navbar() {
           </nav>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={toggle} className="btn btn-ghost p-2" aria-label="Toggle theme" title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}>
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           <WalletButton />
           {address && (
             <>
-              <Link href="/notifications" className="btn btn-ghost hidden sm:inline-flex">Notifications</Link>
+              <Link href="/notifications" className="btn btn-ghost p-2 hidden sm:inline-flex" aria-label="Notifications">
+                <Bell size={16} />
+              </Link>
               <Link href="/profile" aria-label="Profile"
-                className="flex h-10 w-10 items-center justify-center rounded-full font-mono text-xs font-bold"
+                className="flex h-9 w-9 items-center justify-center rounded-full"
                 style={{ background: 'var(--rain)', color: '#06222b' }}>
-                {address.slice(2, 4).toUpperCase()}
+                <User size={15} />
               </Link>
             </>
           )}

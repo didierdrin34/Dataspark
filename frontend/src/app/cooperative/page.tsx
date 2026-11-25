@@ -1,28 +1,35 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useReadContract, useReadContracts } from 'wagmi';
+import { useAccount, useReadContract, useReadContracts, useWatchContractEvent } from 'wagmi';
 import {
-  BATCH_STATUS, CONTRACTS, CROPS, erc20Abi, ledgerAbi, memberKey, mockRwfAbi, registryAbi, seasonId, seasonLabel, short, voucherAbi,
+  BATCH_STATUS, CONTRACTS, CROPS, DEPLOYER, erc20Abi, ledgerAbi, memberKey,
+  mockRwfAbi, registryAbi, seasonId, seasonLabel, short, voucherAbi,
 } from '../lib/contracts';
 import { useBatches, useDeliveries } from '../hooks/useLedger';
 import DistrictSelect from '../components/DistrictSelect';
 import PayoutSplit from '../components/PayoutSplit';
 import { Card, Field, Heading, NotDeployed, Pill, TxButton } from '../components/ui';
+import {
+  Users, UserCheck, ShieldCheck, Truck, Package, Wallet,
+  BadgeCheck, AlertTriangle, CheckCircle2, XCircle, ClipboardList,
+  Coins, UserPlus, Building2,
+} from 'lucide-react';
 
 const YEAR = new Date().getFullYear();
 type Tab = 'overview' | 'deliveries' | 'batches' | 'vouchers';
-const TABS: { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'deliveries', label: 'Deliveries' },
-  { id: 'batches', label: 'Batches and payment' },
-  { id: 'vouchers', label: 'Input vouchers' },
+const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+  { id: 'overview', label: 'Overview', icon: <Building2 size={14} /> },
+  { id: 'deliveries', label: 'Deliveries', icon: <Truck size={14} /> },
+  { id: 'batches', label: 'Batches & payment', icon: <Package size={14} /> },
+  { id: 'vouchers', label: 'Input vouchers', icon: <Coins size={14} /> },
 ];
 
 export default function CooperativePage() {
   const { address } = useAccount();
   const [tab, setTab] = useState<Tab>('overview');
   const [manualId, setManualId] = useState('1');
+  const [officers, setOfficers] = useState<string[]>([]);
 
   const { data: myId, refetch: refetchMine } = useReadContract({
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair', args: [address!], query: { enabled: !!address },
@@ -47,8 +54,26 @@ export default function CooperativePage() {
     query: { enabled: coopId > 0n },
   });
 
+  // Watch OfficerSet events to build officer list
+  useWatchContractEvent({
+    address: CONTRACTS.CooperativeRegistry,
+    abi: registryAbi,
+    eventName: 'OfficerSet',
+    onLogs(logs) {
+      const updated: string[] = [];
+      for (const log of logs as any[]) {
+        const { id, officer, allowed } = log.args ?? {};
+        if (id === coopId) {
+          if (allowed && !updated.includes(officer)) updated.push(officer);
+        }
+      }
+      if (updated.length) setOfficers((prev) => Array.from(new Set([...prev, ...updated])));
+    },
+  });
+
   const isChair = !!address && exists && coop!.chair.toLowerCase() === address.toLowerCase();
   const isStaff = isChair || !!officerFlag;
+  const isAdmin = !!address && address.toLowerCase() === DEPLOYER.toLowerCase();
   const ready = exists && coop!.verified && coop!.active;
   const role = isChair ? 'Chairperson' : officerFlag ? 'Officer' : 'Viewer';
   const members = (stats as any)?.[0]?.result as bigint | undefined;
@@ -59,7 +84,6 @@ export default function CooperativePage() {
   const deliveries = useDeliveries(batches.items.map((b) => b.id));
   const refreshAll = () => { refetchCoop(); refetchMine(); refetchStats(); batches.refetch(); deliveries.refetch(); };
 
-  // forms
   const [name, setName] = useState('');
   const [district, setDistrict] = useState('Nyagatare');
   const [memberCode, setMemberCode] = useState('');
@@ -86,7 +110,9 @@ export default function CooperativePage() {
   return (
     <div className="mx-auto max-w-6xl space-y-6 px-6 py-10">
       <div>
-        <h1 className="font-display text-4xl font-extrabold">Cooperative desk</h1>
+        <h1 className="font-display text-4xl font-extrabold flex items-center gap-3">
+          <Building2 size={32} style={{ color: 'var(--rain)' }} /> Cooperative desk
+        </h1>
         <p className="mt-2 max-w-2xl" style={{ color: 'var(--muted)' }}>
           Record deliveries, group them into batches, and let escrow pay every farmer their share. Farmers appear only as member
           codes: names and phone numbers stay off the blockchain.
@@ -100,33 +126,62 @@ export default function CooperativePage() {
           <div>
             {exists ? (
               <>
-                <p className="font-display text-xl font-bold">{coop!.name}</p>
-                <p className="text-sm" style={{ color: 'var(--muted)' }}>#{String(coopId)} · {coop!.district} · chair {short(coop!.chair)}</p>
+                <p className="font-display text-xl font-bold flex items-center gap-2">
+                  <Building2 size={18} style={{ color: 'var(--rain)' }} />{coop!.name}
+                </p>
+                <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                  #{String(coopId)} · {coop!.district} · chair <span className="font-mono">{short(coop!.chair)}</span>
+                </p>
               </>
             ) : (
-              <p className="text-sm" style={{ color: 'var(--muted)' }}>{address ? 'This wallet has no cooperative yet. Register one on the Overview tab, or look up an existing one.' : 'Connect a wallet to act as a cooperative chair or officer.'}</p>
+              <p className="text-sm" style={{ color: 'var(--muted)' }}>
+                {address ? 'This wallet has no cooperative yet. Register one on the Overview tab, or look up an existing one.' : 'Connect a wallet to act as a cooperative chair or officer.'}
+              </p>
             )}
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            {exists && <Pill tone={coop!.verified ? 'terrace' : 'sorghum'}>{coop!.verified ? 'Verified' : 'Awaiting verification'}</Pill>}
-            {exists && <Pill tone="rain">{role}</Pill>}
+            {exists && <Pill tone={coop!.verified ? 'terrace' : 'sorghum'}>{coop!.verified ? <span className="flex items-center gap-1"><BadgeCheck size={11} /> Verified</span> : <span className="flex items-center gap-1"><AlertTriangle size={11} /> Awaiting verification</span>}</Pill>}
+            {exists && <Pill tone="rain"><span className="flex items-center gap-1"><UserCheck size={11} />{role}</span></Pill>}
             {score !== undefined && <Pill tone="sorghum">Score {String(score)}</Pill>}
             {!myId || myId === 0n ? (
-              <label className="text-sm">Cooperative #
+              <label className="text-sm flex items-center gap-1">Cooperative #
                 <input className="field ml-2 inline-block w-20" type="number" min="1" value={manualId} onChange={(e) => setManualId(e.target.value)} />
               </label>
             ) : null}
           </div>
         </div>
+
         {exists && twoSigner === false && (
-          <p className="mt-3 text-xs" style={{ color: 'var(--sorghum)' }}>Demo mode: one wallet may record and confirm. Turn the two-signer rule back on before any real use.</p>
+          <p className="mt-3 text-xs flex items-center gap-1" style={{ color: 'var(--sorghum)' }}>
+            <AlertTriangle size={12} /> Demo mode: one wallet may record and confirm. Turn the two-signer rule back on before any real use.
+          </p>
+        )}
+
+        {/* Admin verification controls */}
+        {isAdmin && exists && !coop!.verified && (
+          <div className="mt-4 flex flex-wrap gap-2 pt-3" style={{ borderTop: '1px solid var(--panel-line)' }}>
+            <p className="w-full text-xs flex items-center gap-1" style={{ color: 'var(--sorghum)' }}>
+              <ShieldCheck size={13} /> DataSpark admin controls
+            </p>
+            <TxButton variant="rain" label="✓ Verify cooperative" onDone={refreshAll}
+              steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'verifyCooperative', args: [coopId, true] }]} />
+          </div>
+        )}
+        {isAdmin && exists && twoSigner && (
+          <div className="mt-2">
+            <TxButton variant="ghost" label="Disable two-signer (demo)" onDone={refreshAll}
+              steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'setTwoSignerRequired', args: [false] }]} />
+          </div>
         )}
       </Card>
 
       <div className="flex flex-wrap gap-1.5" role="tablist">
         {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className="rounded-lg px-4 py-2 text-sm font-medium"
-            style={tab === t.id ? { background: 'var(--rain)', color: '#06222b' } : { background: 'rgba(255,255,255,0.07)' }}>{t.label}</button>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)}
+            className="rounded-lg px-4 py-2 text-sm font-medium flex items-center gap-1.5"
+            style={tab === t.id ? { background: 'var(--rain)', color: '#06222b' } : { background: 'rgba(255,255,255,0.07)', color: 'var(--muted)' }}>
+            {t.icon}{t.label}
+          </button>
         ))}
       </div>
 
@@ -143,28 +198,45 @@ export default function CooperativePage() {
               </div>
             </Card>
           ) : null}
+
           {exists && (
             <Card>
               <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Use a code like RW-NYA-0001. Only its hash is stored on-chain." />
-              {!ready ? <p className="text-sm" style={{ color: 'var(--sorghum)' }}>Members can be added once DataSpark verifies this cooperative.</p> : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p> : (
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-3">
-                    <Field label="Member code"><input className="field" value={memberCode} onChange={(e) => setMemberCode(e.target.value)} placeholder="RW-NYA-0006" /></Field>
-                    <Field label="Plot size (ha)"><input className="field" type="number" min="0.01" step="0.01" value={plotHa} onChange={(e) => setPlotHa(e.target.value)} /></Field>
+              {!ready ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--sorghum)' }}><AlertTriangle size={13} /> Members can be added once DataSpark verifies this cooperative.</p>
+                : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p>
+                : (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-2 gap-3">
+                      <Field label="Member code"><input className="field" value={memberCode} onChange={(e) => setMemberCode(e.target.value)} placeholder="RW-NYA-0006" /></Field>
+                      <Field label="Plot size (ha)"><input className="field" type="number" min="0.01" step="0.01" value={plotHa} onChange={(e) => setPlotHa(e.target.value)} /></Field>
+                    </div>
+                    <TxButton label="Save member" disabled={!memberCode.trim() || !(Number(plotHa) > 0)} onDone={refreshAll}
+                      steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, memberKey(memberCode), Math.round(Number(plotHa) * 100)] }]} />
                   </div>
-                  <TxButton label="Save member" disabled={!memberCode.trim() || !(Number(plotHa) > 0)} onDone={refreshAll}
-                    steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setMember', args: [coopId, memberKey(memberCode), Math.round(Number(plotHa) * 100)] }]} />
-                </div>
-              )}
+                )}
             </Card>
           )}
+
           {isChair && (
             <Card>
-              <Heading title="Add an officer" hint="Officers record deliveries. You, as chairperson, confirm them. That is the second signature." />
+              <Heading title="Officers" hint="Officers record deliveries. You, as chairperson, confirm them — that is the second signature." />
               <div className="space-y-4">
-                <Field label="Officer wallet address"><input className="field font-mono text-sm" value={officer} onChange={(e) => setOfficer(e.target.value)} placeholder="0x…" /></Field>
-                <TxButton label="Add officer" disabled={!/^0x[a-fA-F0-9]{40}$/.test(officer)} onDone={refreshAll}
+                <Field label="Officer wallet address">
+                  <input className="field font-mono text-sm" value={officer} onChange={(e) => setOfficer(e.target.value)} placeholder="0x…" />
+                </Field>
+                <TxButton label="Add officer" disabled={!/^0x[a-fA-F0-9]{40}$/.test(officer)} onDone={() => { refreshAll(); setOfficers((p) => Array.from(new Set([...p, officer.toLowerCase()]))); setOfficer(''); }}
                   steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setOfficer', args: [coopId, officer, true] }]} />
+                {officers.length > 0 && (
+                  <ul className="space-y-1.5 mt-2">
+                    {officers.map((o) => (
+                      <li key={o} className="glass-inner flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                        <span className="flex items-center gap-2"><Wallet size={13} style={{ color: 'var(--rain)' }} /><span className="font-mono text-xs">{o}</span></span>
+                        <TxButton label="Remove" variant="ghost" className="text-xs py-1 px-2" onDone={() => { refreshAll(); setOfficers((p) => p.filter((x) => x !== o)); }}
+                          steps={() => [{ address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'setOfficer', args: [coopId, o, false] }]} />
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
             </Card>
           )}
@@ -173,47 +245,58 @@ export default function CooperativePage() {
 
       {tab === 'deliveries' && (
         <div className="space-y-6">
-          {!ready || !isStaff ? <Card><p className="text-sm" style={{ color: 'var(--muted)' }}>{!exists ? 'Select or register a cooperative first.' : !ready ? 'This cooperative is waiting for verification.' : 'Only cooperative staff can record deliveries.'}</p></Card> : (
-            <div className="grid gap-6 md:grid-cols-2">
-              <Card>
-                <Heading title="Start a batch" hint="A batch groups deliveries of one crop and season for sale to one buyer." />
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Crop"><select className="field" value={crop} onChange={(e) => setCrop(e.target.value)}>{CROPS.map((c) => <option key={c}>{c}</option>)}</select></Field>
-                  <Field label="Season"><select className="field" value={idx} onChange={(e) => setIdx(Number(e.target.value) as 1 | 2 | 3)}>
-                    <option value={1}>{YEAR} A</option><option value={2}>{YEAR} B</option><option value={3}>{YEAR} C</option></select></Field>
-                </div>
-                <div className="mt-4"><TxButton label="Create batch" onDone={refreshAll}
-                  steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'createBatch', args: [coopId, crop, seasonId(YEAR, idx)] }]} /></div>
-              </Card>
-              <Card>
-                <Heading title="Record a delivery" hint="Quality grade: 1 is best. The chairperson must confirm it before it counts." />
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Batch"><select className="field" value={batchSel} onChange={(e) => setBatchSel(e.target.value)}>
-                    <option value="">Select…</option>{openBatches.map((b) => <option key={String(b.id)} value={String(b.id)}>#{String(b.id)} {b.crop} {seasonLabel(b.season)}</option>)}</select></Field>
-                  <Field label="Member code"><input className="field" value={dMember} onChange={(e) => setDMember(e.target.value)} placeholder="RW-NYA-0001" /></Field>
-                  <Field label="Weight (kg)"><input className="field" type="number" min="1" value={kg} onChange={(e) => setKg(e.target.value)} /></Field>
-                  <Field label="Grade"><select className="field" value={grade} onChange={(e) => setGrade(Number(e.target.value))}><option value={1}>1 (best)</option><option value={2}>2</option><option value={3}>3</option></select></Field>
-                </div>
-                <div className="mt-4"><TxButton label="Record delivery" onDone={refreshAll} disabled={!batchSel || !dMember.trim() || !(Number(kg) > 0)}
-                  steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'recordDelivery', args: [BigInt(batchSel), memberKey(dMember), Number(kg), grade] }]} /></div>
-              </Card>
-            </div>
-          )}
+          {!ready || !isStaff
+            ? <Card><p className="text-sm" style={{ color: 'var(--muted)' }}>{!exists ? 'Select or register a cooperative first.' : !ready ? 'This cooperative is waiting for verification.' : 'Only cooperative staff can record deliveries.'}</p></Card>
+            : (
+              <div className="grid gap-6 md:grid-cols-2">
+                <Card>
+                  <Heading title="Start a batch" hint="A batch groups deliveries of one crop and season for sale to one buyer." />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Crop"><select className="field" value={crop} onChange={(e) => setCrop(e.target.value)}>{CROPS.map((c) => <option key={c}>{c}</option>)}</select></Field>
+                    <Field label="Season"><select className="field" value={idx} onChange={(e) => setIdx(Number(e.target.value) as 1 | 2 | 3)}>
+                      <option value={1}>{YEAR} A</option><option value={2}>{YEAR} B</option><option value={3}>{YEAR} C</option></select></Field>
+                  </div>
+                  <div className="mt-4"><TxButton label="Create batch" onDone={refreshAll}
+                    steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'createBatch', args: [coopId, crop, seasonId(YEAR, idx)] }]} /></div>
+                </Card>
+                <Card>
+                  <Heading title="Record a delivery" hint="Quality grade: 1 is best. The chairperson must confirm it before it counts." />
+                  <div className="grid grid-cols-2 gap-3">
+                    <Field label="Batch"><select className="field" value={batchSel} onChange={(e) => setBatchSel(e.target.value)}>
+                      <option value="">Select…</option>{openBatches.map((b) => <option key={String(b.id)} value={String(b.id)}>#{String(b.id)} {b.crop} {seasonLabel(b.season)}</option>)}</select></Field>
+                    <Field label="Member code"><input className="field" value={dMember} onChange={(e) => setDMember(e.target.value)} placeholder="RW-NYA-0001" /></Field>
+                    <Field label="Weight (kg)"><input className="field" type="number" min="1" value={kg} onChange={(e) => setKg(e.target.value)} /></Field>
+                    <Field label="Grade"><select className="field" value={grade} onChange={(e) => setGrade(Number(e.target.value))}><option value={1}>1 (best)</option><option value={2}>2</option><option value={3}>3</option></select></Field>
+                  </div>
+                  <div className="mt-4"><TxButton label="Record delivery" onDone={refreshAll} disabled={!batchSel || !dMember.trim() || !(Number(kg) > 0)}
+                    steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'recordDelivery', args: [BigInt(batchSel), memberKey(dMember), Number(kg), grade] }]} /></div>
+                </Card>
+              </div>
+            )}
           <Card>
             <Heading title="Delivery log" />
-            {deliveries.items.length === 0 ? <p className="text-sm" style={{ color: 'var(--muted)' }}>No deliveries yet.</p> : (
-              <ul className="space-y-2">
-                {deliveries.items.slice(0, 25).map((d) => (
-                  <li key={String(d.id)} className="glass-inner flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
-                    <span><strong>#{String(d.id)}</strong> · batch #{String(d.batchId)} · {d.kg.toLocaleString()} kg · grade {d.grade} · <span className="font-mono text-xs">{short(d.memberId, 4)}</span></span>
-                    {d.flagged ? <Pill tone="storm">Flagged by auditor</Pill> : d.confirmed ? <Pill tone="terrace">Confirmed</Pill> : isChair ? (
-                      <TxButton label="Confirm" variant="rain" onDone={refreshAll}
-                        steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'confirmDelivery', args: [d.id] }]} />
-                    ) : <Pill tone="sorghum">Waiting for chairperson</Pill>}
-                  </li>
-                ))}
-              </ul>
-            )}
+            {deliveries.items.length === 0
+              ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--muted)' }}><ClipboardList size={14} /> No deliveries yet.</p>
+              : (
+                <ul className="space-y-2">
+                  {deliveries.items.slice(0, 25).map((d) => (
+                    <li key={String(d.id)} className="glass-inner flex flex-wrap items-center justify-between gap-3 p-3 text-sm">
+                      <span className="flex items-center gap-2">
+                        <Truck size={13} style={{ color: 'var(--rain)' }} />
+                        <strong>#{String(d.id)}</strong> · batch #{String(d.batchId)} · {d.kg.toLocaleString()} kg · grade {d.grade} · <span className="font-mono text-xs">{short(d.memberId, 4)}</span>
+                      </span>
+                      {d.flagged
+                        ? <Pill tone="storm"><span className="flex items-center gap-1"><XCircle size={11} /> Flagged</span></Pill>
+                        : d.confirmed
+                          ? <Pill tone="terrace"><span className="flex items-center gap-1"><CheckCircle2 size={11} /> Confirmed</span></Pill>
+                          : isChair
+                            ? <TxButton label="Confirm" variant="rain" onDone={refreshAll}
+                                steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'confirmDelivery', args: [d.id] }]} />
+                            : <Pill tone="sorghum">Waiting for chairperson</Pill>}
+                    </li>
+                  ))}
+                </ul>
+              )}
           </Card>
         </div>
       )}
@@ -223,9 +306,9 @@ export default function CooperativePage() {
           <Card>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="max-w-xl text-sm" style={{ color: 'var(--muted)' }}>
-                Buyers pay into escrow. On release the full amount goes to the cooperative, and each farmer’s share is recorded by kg so the cooperative can pay by mobile money.
+                Buyers pay into escrow. On release the full amount goes to the cooperative, and each farmer's share is recorded by kg.
               </p>
-              <TxButton variant="ghost" label="Get 5,000,000 test mRWF (buyer)" steps={() => [{ address: CONTRACTS.MockRWF, abi: mockRwfAbi, functionName: 'faucet' }]} />
+              <TxButton variant="ghost" label="Get 5,000,000 test mRWF" steps={() => [{ address: CONTRACTS.MockRWF, abi: mockRwfAbi, functionName: 'faucet' }]} />
             </div>
           </Card>
           {batches.items.length === 0 && <Card><p className="text-sm" style={{ color: 'var(--muted)' }}>No batches yet. Create one on the Deliveries tab.</p></Card>}
@@ -238,17 +321,16 @@ export default function CooperativePage() {
               <Card key={key}>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
-                    <h3 className="font-display text-lg font-bold">Batch #{key}: {b.crop}</h3>
-                    <p className="text-sm" style={{ color: 'var(--muted)' }}>{seasonLabel(b.season)} · {b.totalKg.toLocaleString()} kg confirmed{b.pendingDeliveries ? ` · ${b.pendingDeliveries} waiting for confirmation` : ''}</p>
+                    <h3 className="font-display text-lg font-bold flex items-center gap-2"><Package size={16} style={{ color: 'var(--rain)' }} />Batch #{key}: {b.crop}</h3>
+                    <p className="text-sm" style={{ color: 'var(--muted)' }}>{seasonLabel(b.season)} · {b.totalKg.toLocaleString()} kg confirmed{b.pendingDeliveries ? ` · ${b.pendingDeliveries} waiting` : ''}</p>
                   </div>
                   <Pill tone={b.status === 3 ? 'terrace' : b.status === 2 ? 'rain' : b.status === 4 ? 'storm' : 'sorghum'}>{BATCH_STATUS[b.status]}</Pill>
                 </div>
-                {b.amount > 0n && <p className="mt-2 text-sm">Escrow: <strong style={{ color: 'var(--sorghum)' }}>{b.amount.toLocaleString()} mRWF</strong> from {short(b.buyer)}</p>}
-
+                {b.amount > 0n && <p className="mt-2 text-sm flex items-center gap-1"><Coins size={13} style={{ color: 'var(--sorghum)' }} />Escrow: <strong style={{ color: 'var(--sorghum)' }}>{b.amount.toLocaleString()} mRWF</strong> from <span className="font-mono text-xs">{short(b.buyer)}</span></p>}
                 {b.status === 0 && isStaff && (
                   <div className="mt-4"><TxButton label="Seal batch" onDone={refreshAll} disabled={b.pendingDeliveries > 0 || b.totalKg === 0}
                     steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'sealBatch', args: [b.id] }]} />
-                    {(b.pendingDeliveries > 0 || b.totalKg === 0) && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Confirm all deliveries first. A batch needs at least one confirmed delivery.</p>}</div>
+                    {(b.pendingDeliveries > 0 || b.totalKg === 0) && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Confirm all deliveries first.</p>}</div>
                 )}
                 {b.status === 1 && (
                   <div className="mt-4 flex flex-wrap items-end gap-3">
@@ -263,9 +345,9 @@ export default function CooperativePage() {
                 )}
                 {b.status === 2 && (
                   <div className="mt-4">
-                    <TxButton label={isBuyer ? 'Confirm receipt and release payment' : 'Release payment'} onDone={refreshAll} disabled={!isBuyer && !(isChair && timeoutOk)}
+                    <TxButton label={isBuyer ? 'Confirm receipt & release payment' : 'Release payment'} onDone={refreshAll} disabled={!isBuyer && !(isChair && timeoutOk)}
                       steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'releaseBatch', args: [b.id] }]} />
-                    {!isBuyer && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>The buyer releases payment. If they stay silent for 14 days, the chairperson can.</p>}
+                    {!isBuyer && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>The buyer releases payment. If silent for 14 days, the chairperson can.</p>}
                   </div>
                 )}
                 {b.status === 3 && <PayoutSplit batchId={b.id} />}
@@ -277,7 +359,7 @@ export default function CooperativePage() {
 
       {tab === 'vouchers' && (
         <Card>
-          <Heading title="Input vouchers" hint="Spend-only credit for seed and fertilizer. It cannot be transferred, only redeemed at registered dealers inside its valid dates." />
+          <Heading title="Input vouchers" hint="Spend-only credit for seed and fertilizer. Cannot be transferred, only redeemed at registered dealers inside its valid dates." />
           <div className="grid gap-4 md:max-w-md">
             <Field label="Member code"><input className="field" value={lookup} onChange={(e) => setLookup(e.target.value)} placeholder="RW-NYA-0001" /></Field>
           </div>
@@ -287,16 +369,16 @@ export default function CooperativePage() {
               <p className="font-display text-3xl font-bold" style={{ color: 'var(--terrace)' }}>{usable !== undefined ? Number(usable).toLocaleString() : '–'} mRWF</p>
               <ul className="mt-4 space-y-2">
                 {((vouchers as any[]) ?? []).map((v, i) => (
-                  <li key={i} className="glass-inner p-3 text-sm">
-                    {Number(v.amount).toLocaleString()} mRWF left · valid {new Date(Number(v.notBefore) * 1000).toLocaleDateString()} to {new Date(Number(v.expiresAt) * 1000).toLocaleDateString()}{' '}
-                    {v.emergency && <Pill tone="storm">Climate emergency</Pill>}
+                  <li key={i} className="glass-inner p-3 text-sm flex items-center justify-between gap-3">
+                    <span>{Number(v.amount).toLocaleString()} mRWF left · valid {new Date(Number(v.notBefore) * 1000).toLocaleDateString()} to {new Date(Number(v.expiresAt) * 1000).toLocaleDateString()}</span>
+                    {v.emergency && <Pill tone="storm"><span className="flex items-center gap-1"><AlertTriangle size={11} /> Climate emergency</span></Pill>}
                   </li>
                 ))}
                 {((vouchers as any[]) ?? []).length === 0 && <li className="text-sm" style={{ color: 'var(--muted)' }}>No vouchers issued to this member yet.</li>}
               </ul>
             </div>
           )}
-          <p className="mt-5 text-xs" style={{ color: 'var(--muted)' }}>Emergency vouchers are released by DataSpark’s climate oracle after a drought or flood trigger is declared for the district.</p>
+          <p className="mt-5 text-xs" style={{ color: 'var(--muted)' }}>Emergency vouchers are released by DataSpark's climate oracle after a drought or flood trigger is declared for the district.</p>
         </Card>
       )}
     </div>

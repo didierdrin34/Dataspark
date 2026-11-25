@@ -5,23 +5,20 @@ export const ZERO = '0x0000000000000000000000000000000000000000' as Address;
 export const CONTRACTS = deployments.contracts as Record<keyof typeof deployments.contracts, Address>;
 export const isDeployed = CONTRACTS.HarvestLedger !== ZERO;
 export const EXPLORER = 'https://sepolia.etherscan.io';
+export const DEPLOYER = deployments.deployer.toLowerCase() as Address;
 
-// ---------- key helpers (must match the Solidity side exactly) ----------
 export const districtKey = (name: string) => keccak256(toBytes(name));
 export const cropKey = (crop: string) => keccak256(toBytes(crop.trim().toLowerCase()));
-/** Farmers never go on-chain by name: a member code like "RW-NYA-0001" is hashed. */
 export const memberKey = (code: string) => keccak256(toBytes(code.trim().toUpperCase()));
 
 export const CROPS = ['maize', 'beans', 'irish potato', 'rice', 'cassava', 'sorghum', 'coffee', 'tea'];
 
-/** season id = year*10 + index (A=1, B=2, C=3) */
 export const seasonId = (year: number, idx: 1 | 2 | 3) => year * 10 + idx;
 export const seasonLabel = (s: number) => `${Math.floor(s / 10)} Season ${['', 'A', 'B', 'C'][s % 10] ?? s % 10}`;
 
 export const BATCH_STATUS = ['Open', 'Sealed', 'Funded', 'Released', 'Refunded'] as const;
 export const PLAYBOOK_STATUS = ['Active', 'Rewarded', 'Neutral', 'Slashed', 'Inconclusive'] as const;
 
-// ---------- ABIs (human-readable, kept in sync with /hardhat-contract/contracts) ----------
 export const erc20Abi = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function allowance(address owner, address spender) view returns (uint256)',
@@ -46,8 +43,12 @@ export const registryAbi = parseAbi([
   'function memberPlotAres(uint256,bytes32) view returns (uint32)',
   'function getCooperative(uint256) view returns ((string name, string district, bytes32 districtKey, address chair, bool verified, bool active))',
   'function registerCooperative(string name, string district) returns (uint256)',
+  'function verifyCooperative(uint256 id, bool verified)',
+  'function setActive(uint256 id, bool active)',
   'function setOfficer(uint256 id, address officer, bool allowed)',
   'function setMember(uint256 id, bytes32 memberId, uint32 plotAres)',
+  'function isStaff(uint256 id, address who) view returns (bool)',
+  'event OfficerSet(uint256 indexed id, address indexed officer, bool allowed)',
 ]);
 
 export const ledgerAbi = parseAbi([
@@ -67,6 +68,7 @@ export const ledgerAbi = parseAbi([
   'function sealBatch(uint256 batchId)',
   'function fundBatch(uint256 batchId, uint256 amount)',
   'function releaseBatch(uint256 batchId)',
+  'function setTwoSignerRequired(bool v)',
 ]);
 
 export const playbookAbi = parseAbi([
@@ -86,51 +88,21 @@ export const voucherAbi = parseAbi([
   'function vouchersOf(uint256 coopId, bytes32 memberId) view returns ((uint128 amount, uint64 notBefore, uint64 expiresAt, bytes32 category, bytes32 reason, bool emergency)[])',
 ]);
 
-// ---------- view types ----------
 export interface PlaybookView {
-  id: bigint;
-  author: Address;
-  district: string;
-  districtKey: `0x${string}`;
-  crop: string;
-  cropKey: `0x${string}`;
-  season: number;
-  uri: string;
-  dataHash: `0x${string}`;
-  stake: bigint;
-  followDeadline: bigint;
-  settleAfter: bigint;
-  status: number;
-  followerCount: number;
-  totalAres: number;
-  resultBps: bigint;
-  resultYieldKgHa: number;
+  id: bigint; author: Address; district: string; districtKey: `0x${string}`;
+  crop: string; cropKey: `0x${string}`; season: number; uri: string; dataHash: `0x${string}`;
+  stake: bigint; followDeadline: bigint; settleAfter: bigint; status: number;
+  followerCount: number; totalAres: number; resultBps: bigint; resultYieldKgHa: number;
 }
 
 export interface BatchView {
-  id: bigint;
-  coopId: bigint;
-  crop: string;
-  cropKey: `0x${string}`;
-  season: number;
-  totalKg: number;
-  status: number;
-  buyer: Address;
-  amount: bigint;
-  fundedAt: bigint;
-  pendingDeliveries: number;
+  id: bigint; coopId: bigint; crop: string; cropKey: `0x${string}`; season: number;
+  totalKg: number; status: number; buyer: Address; amount: bigint; fundedAt: bigint; pendingDeliveries: number;
 }
 
 export interface DeliveryView {
-  id: bigint;
-  batchId: bigint;
-  memberId: `0x${string}`;
-  kg: number;
-  grade: number;
-  recordedAt: bigint;
-  recordedBy: Address;
-  confirmed: boolean;
-  flagged: boolean;
+  id: bigint; batchId: bigint; memberId: `0x${string}`; kg: number; grade: number;
+  recordedAt: bigint; recordedBy: Address; confirmed: boolean; flagged: boolean;
 }
 
 export const short = (s: string, n = 4) => (s.length > 2 * n + 2 ? `${s.slice(0, n + 2)}…${s.slice(-n)}` : s);

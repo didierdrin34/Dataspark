@@ -1,6 +1,13 @@
 'use client';
 import { useReadContracts } from 'wagmi';
+import { Building2, Layers, BookOpen } from 'lucide-react';
 import { CONTRACTS, isDeployed, ledgerAbi, playbookAbi, registryAbi } from '../lib/contracts';
+
+const ITEMS = [
+  { icon: <Building2 size={16} />, label: 'cooperatives on the ledger' },
+  { icon: <Layers size={16} />, label: 'harvest batches traced' },
+  { icon: <BookOpen size={16} />, label: 'district playbooks' },
+];
 
 export default function ChainPulse() {
   const { data } = useReadContracts({
@@ -12,17 +19,17 @@ export default function ChainPulse() {
     query: { enabled: isDeployed },
   });
   const v = (i: number) => (data && (data as any)[i]?.status === 'success' ? String((data as any)[i].result) : '–');
-  const items = [
-    { n: v(0), l: 'cooperatives on the ledger' },
-    { n: v(1), l: 'harvest batches traced' },
-    { n: v(2), l: 'district playbooks' },
-  ];
+
   return (
     <dl className="flex flex-wrap gap-x-8 gap-y-2">
-      {items.map((i) => (
-        <div key={i.l}>
-          <dd className="font-display text-3xl font-bold" style={{ color: 'var(--sorghum)' }}>{i.n}</dd>
-          <dt className="text-sm" style={{ color: 'var(--muted)' }}>{i.l}</dt>
+      {ITEMS.map((item, i) => (
+        <div key={item.label}>
+          <dd className="font-display text-3xl font-bold flex items-center gap-2" style={{ color: 'var(--sorghum)' }}>
+            {v(i)}
+          </dd>
+          <dt className="text-sm flex items-center gap-1.5 mt-0.5" style={{ color: 'var(--muted)' }}>
+            {item.icon}{item.label}
+          </dt>
         </div>
       ))}
     </dl>

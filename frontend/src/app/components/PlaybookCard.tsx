@@ -2,10 +2,25 @@
 import { useState } from 'react';
 import { formatUnits } from 'viem';
 import { useAccount, useReadContract } from 'wagmi';
+import { Sprout, Bean, Wheat, Leaf, Coffee, FlaskConical, Droplets, TreePine, TrendingUp, TrendingDown, Minus, Clock, Users } from 'lucide-react';
 import { CONTRACTS, PLAYBOOK_STATUS, playbookAbi, registryAbi, seasonLabel, short, type PlaybookView } from '../lib/contracts';
 import { Pill, TxButton } from './ui';
 
 const tone = (s: number) => (['sorghum', 'terrace', 'mist', 'storm', 'mist'] as const)[s];
+
+function CropIcon({ crop, size = 28 }: { crop: string; size?: number }) {
+  const c = crop.toLowerCase();
+  const style = { color: 'var(--terrace)' };
+  if (c === 'maize') return <Wheat size={size} style={style} />;
+  if (c === 'beans') return <Bean size={size} style={style} />;
+  if (c === 'irish potato') return <Sprout size={size} style={style} />;
+  if (c === 'rice') return <Droplets size={size} style={style} />;
+  if (c === 'cassava') return <TreePine size={size} style={style} />;
+  if (c === 'sorghum') return <Wheat size={size} style={{ color: 'var(--sorghum)' }} />;
+  if (c === 'coffee') return <Coffee size={size} style={style} />;
+  if (c === 'tea') return <Leaf size={size} style={style} />;
+  return <FlaskConical size={size} style={style} />;
+}
 
 export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView; rank?: number; onChanged?: () => void }) {
   const { address } = useAccount();
@@ -32,26 +47,44 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
 
   return (
     <article className="glass-inner p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h3 className="font-display text-lg font-bold">
-            {rank ? <span style={{ color: 'var(--sorghum)' }}>#{rank} </span> : null}
-            {pb.crop[0].toUpperCase() + pb.crop.slice(1)} in {pb.district}
-          </h3>
-          <p className="text-xs" style={{ color: 'var(--muted)' }}>
-            {seasonLabel(pb.season)} · by {short(pb.author)}{score !== undefined ? ` · author score ${Number(score) / 100 >= 0 ? '+' : ''}${(Number(score) / 100).toFixed(0)}%` : ''}
-          </p>
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 flex h-12 w-12 items-center justify-center rounded-xl" style={{ background: 'rgba(143,209,107,0.12)' }}>
+          <CropIcon crop={pb.crop} size={24} />
         </div>
-        <Pill tone={tone(pb.status)}>{PLAYBOOK_STATUS[pb.status]}</Pill>
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div>
+              <h3 className="font-display text-lg font-bold">
+                {rank ? <span style={{ color: 'var(--sorghum)' }}>#{rank} </span> : null}
+                {pb.crop[0].toUpperCase() + pb.crop.slice(1)} in {pb.district}
+              </h3>
+              <p className="text-xs" style={{ color: 'var(--muted)' }}>
+                {seasonLabel(pb.season)} · by {short(pb.author)}
+                {score !== undefined ? ` · score ${Number(score) >= 0 ? '+' : ''}${Number(score).toFixed(0)}` : ''}
+              </p>
+            </div>
+            <Pill tone={tone(pb.status)}>{PLAYBOOK_STATUS[pb.status]}</Pill>
+          </div>
+        </div>
       </div>
 
       <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
-        <div><dt style={{ color: 'var(--muted)' }}>Staked</dt><dd className="font-semibold" style={{ color: 'var(--sorghum)' }}>{Number(formatUnits(pb.stake, 18)).toLocaleString()} HVST</dd></div>
-        <div><dt style={{ color: 'var(--muted)' }}>Cooperatives</dt><dd className="font-semibold">{pb.followerCount}</dd></div>
-        <div><dt style={{ color: 'var(--muted)' }}>vs baseline</dt>
-          <dd className="font-semibold" style={{ color: pb.status === 0 ? 'var(--muted)' : bps >= 0 ? 'var(--terrace)' : 'var(--storm)' }}>
+        <div className="glass-inner p-2 text-center">
+          <dt className="text-xs" style={{ color: 'var(--muted)' }}>Staked</dt>
+          <dd className="font-semibold mt-0.5" style={{ color: 'var(--sorghum)' }}>{Number(formatUnits(pb.stake, 18)).toLocaleString()} HVST</dd>
+        </div>
+        <div className="glass-inner p-2 text-center">
+          <dt className="flex items-center justify-center gap-1 text-xs" style={{ color: 'var(--muted)' }}><Users size={11} /> Coops</dt>
+          <dd className="font-semibold mt-0.5">{pb.followerCount}</dd>
+        </div>
+        <div className="glass-inner p-2 text-center">
+          <dt className="text-xs" style={{ color: 'var(--muted)' }}>vs baseline</dt>
+          <dd className="font-semibold mt-0.5 flex items-center justify-center gap-1"
+            style={{ color: pb.status === 0 ? 'var(--muted)' : bps >= 0 ? 'var(--terrace)' : 'var(--storm)' }}>
+            {pb.status === 0 ? <Minus size={12} /> : bps >= 0 ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
             {pb.status === 0 ? 'pending' : pb.status === 4 ? 'n/a' : `${bps >= 0 ? '+' : ''}${bps.toFixed(1)}%`}
-          </dd></div>
+          </dd>
+        </div>
       </dl>
 
       <p className="mt-3 text-sm break-all">
@@ -62,8 +95,10 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
         <div className="mt-4 flex flex-wrap items-end gap-3">
           {canFollow && (
             <>
-              <label className="text-sm">Hectares you will plant
-                <input className="field mt-1 w-32" type="number" min="0.1" step="0.1" value={ha} onChange={(e) => setHa(e.target.value)} />
+              <label className="text-sm flex items-center gap-1">
+                <Clock size={13} style={{ color: 'var(--muted)' }} />
+                Hectares to plant
+                <input className="field mt-1 w-28" type="number" min="0.1" step="0.1" value={ha} onChange={(e) => setHa(e.target.value)} />
               </label>
               <TxButton label={`Follow (${days}d left)`} onDone={onChanged}
                 steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, Math.round(Number(ha) * 100)] }]}
