@@ -380,15 +380,43 @@ export default function CooperativePage() {
                   <Pill tone={b.status === 3 ? 'terrace' : b.status === 2 ? 'rain' : b.status === 4 ? 'storm' : 'sorghum'}>{BATCH_STATUS[b.status]}</Pill>
                 </div>
                 {b.amount > 0n && <p className="mt-2 text-sm flex items-center gap-1"><Coins size={13} style={{ color: 'var(--sorghum)' }} />Escrow: <strong style={{ color: 'var(--sorghum)' }}>{b.amount.toLocaleString()} mRWF</strong> from <span className="font-mono text-xs">{short(b.buyer)}</span></p>}
-                {b.status === 0 && isStaff && (
-                  <div className="mt-4"><TxButton label="Seal batch" onDone={refreshAll} disabled={b.pendingDeliveries > 0 || b.totalKg === 0}
-                    steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'sealBatch', args: [b.id] }]} />
-                    {(b.pendingDeliveries > 0 || b.totalKg === 0) && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Confirm all deliveries first.</p>}</div>
+
+                {/* Step guide visible to all */}
+                {b.status === 0 && (
+                  <div className="mt-3 rounded-lg px-3 py-2 text-xs flex items-start gap-2" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--muted)' }}>
+                    <span className="mt-0.5">①</span>
+                    <span>Waiting for the cooperative chairperson (<span className="font-mono">{exists ? short(coop!.chair) : ''}</span>) to seal this batch. Once sealed, any buyer can fund escrow.</span>
+                  </div>
                 )}
                 {b.status === 1 && (
+                  <div className="mt-3 rounded-lg px-3 py-2 text-xs flex items-start gap-2" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--muted)' }}>
+                    <span className="mt-0.5">②</span>
+                    <span>Batch sealed — <strong>{b.totalKg.toLocaleString()} kg</strong> of {b.crop} ready for purchase. Enter your offer below to lock funds in escrow.</span>
+                  </div>
+                )}
+                {b.status === 2 && (
+                  <div className="mt-3 rounded-lg px-3 py-2 text-xs flex items-start gap-2" style={{ background: 'rgba(255,255,255,0.04)', color: 'var(--muted)' }}>
+                    <span className="mt-0.5">③</span>
+                    <span>{isBuyer ? 'You funded this escrow. Confirm receipt below to release payment to the cooperative.' : `Buyer ${short(b.buyer)} must confirm receipt. If silent for 14 days the chairperson can release.`}</span>
+                  </div>
+                )}
+
+                {/* Seal — staff only */}
+                {b.status === 0 && isStaff && (
+                  <div className="mt-4">
+                    <TxButton label="Seal batch" onDone={refreshAll} disabled={b.pendingDeliveries > 0 || b.totalKg === 0}
+                      steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'sealBatch', args: [b.id] }]} />
+                    {(b.pendingDeliveries > 0 || b.totalKg === 0) && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Confirm all deliveries first.</p>}
+                  </div>
+                )}
+
+                {/* Fund escrow — any connected wallet */}
+                {b.status === 1 && !!address && (
                   <div className="mt-4 flex flex-wrap items-end gap-3">
-                    <label className="text-sm">Offer price (mRWF)
-                      <input className="field mt-1 w-48" type="number" min="1" value={amt} onChange={(e) => setPay({ ...pay, [key]: e.target.value })} /></label>
+                    <label className="text-sm">Your offer price (mRWF)
+                      <input className="field mt-1 w-48" type="number" min="1" value={amt} onChange={(e) => setPay({ ...pay, [key]: e.target.value })} />
+                      <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>≈ {amt && b.totalKg ? (Number(amt) / b.totalKg).toFixed(2) : '–'} mRWF / kg</p>
+                    </label>
                     <TxButton label="Approve and fund escrow" labels={['mRWF approval', 'escrow funding']} onDone={refreshAll} disabled={!(Number(amt) > 0)}
                       steps={() => [
                         { address: CONTRACTS.MockRWF, abi: erc20Abi, functionName: 'approve', args: [CONTRACTS.HarvestLedger, BigInt(amt)] },
@@ -396,13 +424,21 @@ export default function CooperativePage() {
                       ]} />
                   </div>
                 )}
+                {b.status === 1 && !address && (
+                  <p className="mt-3 text-sm" style={{ color: 'var(--muted)' }}>Connect a wallet to fund escrow for this batch.</p>
+                )}
+
+                {/* Release — buyer or chair after timeout */}
                 {b.status === 2 && (
                   <div className="mt-4">
-                    <TxButton label={isBuyer ? 'Confirm receipt & release payment' : 'Release payment'} onDone={refreshAll} disabled={!isBuyer && !(isChair && timeoutOk)}
+                    <TxButton label={isBuyer ? 'Confirm receipt & release payment' : 'Release payment (14-day timeout)'} onDone={refreshAll}
+                      disabled={!address || (!isBuyer && !(isChair && timeoutOk))}
                       steps={() => [{ address: CONTRACTS.HarvestLedger, abi: ledgerAbi, functionName: 'releaseBatch', args: [b.id] }]} />
-                    {!isBuyer && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>The buyer releases payment. If silent for 14 days, the chairperson can.</p>}
+                    {!isBuyer && isChair && !timeoutOk && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>You can release after the 14-day buyer timeout.</p>}
+                    {!isBuyer && !isChair && <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Only the buyer or the chairperson (after 14 days) can release.</p>}
                   </div>
                 )}
+
                 {b.status === 3 && <PayoutSplit batchId={b.id} />}
               </Card>
             );
