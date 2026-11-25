@@ -201,13 +201,16 @@ export default function CooperativePage() {
 
           {exists && (
             <Card>
-              <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Use a code like RW-NYA-0001. Only its hash is stored on-chain." />
+              <Heading title={`Members (${members !== undefined ? String(members) : '–'})`} hint="Members are identified by an off-chain code (e.g. RW-NYA-0001) — not a wallet address. Only the code's hash is stored on-chain; names and phone numbers stay in DataSpark's database." />
               {!ready ? <p className="text-sm flex items-center gap-1" style={{ color: 'var(--sorghum)' }}><AlertTriangle size={13} /> Members can be added once DataSpark verifies this cooperative.</p>
                 : !isStaff ? <p className="text-sm" style={{ color: 'var(--muted)' }}>Only the chairperson and officers can add members.</p>
                 : (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 gap-3">
-                      <Field label="Member code"><input className="field" value={memberCode} onChange={(e) => setMemberCode(e.target.value)} placeholder="RW-NYA-0006" /></Field>
+                      <Field label="Member code (e.g. RW-NYA-0001)">
+                        <input className="field" value={memberCode} onChange={(e) => setMemberCode(e.target.value)} placeholder="RW-NYA-0006" />
+                        <p className="mt-1 text-xs" style={{ color: 'var(--muted)' }}>Not a wallet address — use your cooperative's member numbering.</p>
+                      </Field>
                       <Field label="Plot size (ha)"><input className="field" type="number" min="0.01" step="0.01" value={plotHa} onChange={(e) => setPlotHa(e.target.value)} /></Field>
                     </div>
                     <TxButton label="Save member" disabled={!memberCode.trim() || !(Number(plotHa) > 0)} onDone={refreshAll}
