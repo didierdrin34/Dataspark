@@ -1,0 +1,15 @@
+{
+  "chainId": 11155111,
+  "network": "sepolia",
+  "deployedAt": "not deployed yet: run `npm run deploy:sepolia` in /hardhat-contract",
+  "deployer": "0xa48099868525fEd9b4B7B9d98FC26AB3e62b3E7e",
+  "contracts": {
+    "MockRWF": "0x4af2d34b85fa88E15E9be1cef3Df3465d04C431b",
+    "HVST": "0x24535681c54277A5898264e8c605054fDDE18336",
+    "CooperativeRegistry": "0x027D799356C5d24fe601A80DE5E1F69282B71F2d",
+    "HarvestLedger": "0x5c3C5655Ba3E3306252b3eB95e580F8DBB0bD186",
+    "PlaybookRegistry": "0xE293A57110eEb64072Cf7FCf60952eA2d336652e",
+    "InputVoucher": "0x06FC30287d1D092Bf486495a845dD783A7cB8563",
+    "HVSTFaucet": "0x30a6735e3123e669B99f28cfec633416f6FcC1aC"
+  }
+}

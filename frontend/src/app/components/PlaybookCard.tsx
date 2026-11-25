@@ -1,0 +1,82 @@
+'use client';
+import { useState } from 'react';
+import { formatUnits } from 'viem';
+import { useAccount, useReadContract } from 'wagmi';
+import { CONTRACTS, PLAYBOOK_STATUS, playbookAbi, registryAbi, seasonLabel, short, type PlaybookView } from '../lib/contracts';
+import { Pill, TxButton } from './ui';
+
+const tone = (s: number) => (['sorghum', 'terrace', 'mist', 'storm', 'mist'] as const)[s];
+
+export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView; rank?: number; onChanged?: () => void }) {
+  const { address } = useAccount();
+  const [ha, setHa] = useState('1');
+  const now = Math.floor(Date.now() / 1000);
+
+  const { data: coopId } = useReadContract({
+    address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair',
+    args: [address!], query: { enabled: !!address },
+  });
+  const { data: already } = useReadContract({
+    address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'hasFollowed',
+    args: [pb.id, coopId ?? 0n], query: { enabled: !!coopId && coopId > 0n },
+  });
+  const { data: score } = useReadContract({
+    address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'authorScore', args: [pb.author],
+  });
+
+  const active = pb.status === 0;
+  const canFollow = active && now <= Number(pb.followDeadline) && !!coopId && coopId > 0n && !already;
+  const canSettle = active && now >= Number(pb.settleAfter);
+  const bps = Number(pb.resultBps) / 100;
+  const days = Math.max(0, Math.ceil((Number(pb.followDeadline) - now) / 86400));
+
+  return (
+    <article className="glass-inner p-4">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <h3 className="font-display text-lg font-bold">
+            {rank ? <span style={{ color: 'var(--sorghum)' }}>#{rank} </span> : null}
+            {pb.crop[0].toUpperCase() + pb.crop.slice(1)} in {pb.district}
+          </h3>
+          <p className="text-xs" style={{ color: 'var(--muted)' }}>
+            {seasonLabel(pb.season)} · by {short(pb.author)}{score !== undefined ? ` · author score ${Number(score) / 100 >= 0 ? '+' : ''}${(Number(score) / 100).toFixed(0)}%` : ''}
+          </p>
+        </div>
+        <Pill tone={tone(pb.status)}>{PLAYBOOK_STATUS[pb.status]}</Pill>
+      </div>
+
+      <dl className="mt-3 grid grid-cols-3 gap-2 text-sm">
+        <div><dt style={{ color: 'var(--muted)' }}>Staked</dt><dd className="font-semibold" style={{ color: 'var(--sorghum)' }}>{Number(formatUnits(pb.stake, 18)).toLocaleString()} HVST</dd></div>
+        <div><dt style={{ color: 'var(--muted)' }}>Cooperatives</dt><dd className="font-semibold">{pb.followerCount}</dd></div>
+        <div><dt style={{ color: 'var(--muted)' }}>vs baseline</dt>
+          <dd className="font-semibold" style={{ color: pb.status === 0 ? 'var(--muted)' : bps >= 0 ? 'var(--terrace)' : 'var(--storm)' }}>
+            {pb.status === 0 ? 'pending' : pb.status === 4 ? 'n/a' : `${bps >= 0 ? '+' : ''}${bps.toFixed(1)}%`}
+          </dd></div>
+      </dl>
+
+      <p className="mt-3 text-sm break-all">
+        Steps: {pb.uri.startsWith('http') ? <a className="underline" style={{ color: 'var(--rain)' }} href={pb.uri} target="_blank" rel="noreferrer">{pb.uri}</a> : pb.uri}
+      </p>
+
+      {(canFollow || canSettle) && (
+        <div className="mt-4 flex flex-wrap items-end gap-3">
+          {canFollow && (
+            <>
+              <label className="text-sm">Hectares you will plant
+                <input className="field mt-1 w-32" type="number" min="0.1" step="0.1" value={ha} onChange={(e) => setHa(e.target.value)} />
+              </label>
+              <TxButton label={`Follow (${days}d left)`} onDone={onChanged}
+                steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'follow', args: [pb.id, Math.round(Number(ha) * 100)] }]}
+                disabled={!(Number(ha) > 0)} />
+            </>
+          )}
+          {canSettle && (
+            <TxButton label="Settle season" variant="rain" onDone={onChanged}
+              steps={() => [{ address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'settle', args: [pb.id] }]} />
+          )}
+        </div>
+      )}
+      <p className="mt-3 text-xs" style={{ color: 'var(--muted)' }}>Advice, not a guarantee. Results are measured against the district baseline.</p>
+    </article>
+  );
+}
