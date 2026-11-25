@@ -27,20 +27,29 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
   const [ha, setHa] = useState('1');
   const now = Math.floor(Date.now() / 1000);
 
-  const { data: coopId } = useReadContract({
+  const [memberCoopId, setMemberCoopId] = useState('');
+
+  const { data: chairCoopId } = useReadContract({
     address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'coopIdOfChair',
     args: [address!], query: { enabled: !!address },
   });
+  const resolvedCoopId = (chairCoopId && chairCoopId > 0n) ? chairCoopId : (memberCoopId ? BigInt(memberCoopId) : 0n);
+  const { data: isStaff } = useReadContract({
+    address: CONTRACTS.CooperativeRegistry, abi: registryAbi, functionName: 'isStaff',
+    args: [resolvedCoopId, address!], query: { enabled: !!address && resolvedCoopId > 0n && !(chairCoopId && chairCoopId > 0n) },
+  });
+  const coopId = (chairCoopId && chairCoopId > 0n) ? chairCoopId : (isStaff ? resolvedCoopId : 0n);
   const { data: already } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'hasFollowed',
-    args: [pb.id, coopId ?? 0n], query: { enabled: !!coopId && coopId > 0n },
+    args: [pb.id, coopId ?? 0n], query: { enabled: coopId > 0n },
   });
   const { data: score } = useReadContract({
     address: CONTRACTS.PlaybookRegistry, abi: playbookAbi, functionName: 'authorScore', args: [pb.author],
   });
 
   const active = pb.status === 0;
-  const canFollow = active && now <= Number(pb.followDeadline) && !!coopId && coopId > 0n && !already;
+  const needsCoopId = active && now <= Number(pb.followDeadline) && !!address && !(chairCoopId && chairCoopId > 0n);
+  const canFollow = active && now <= Number(pb.followDeadline) && coopId > 0n && !already;
   const canSettle = active && now >= Number(pb.settleAfter);
   const bps = Number(pb.resultBps) / 100;
   const days = Math.max(0, Math.ceil((Number(pb.followDeadline) - now) / 86400));
@@ -90,6 +99,15 @@ export default function PlaybookCard({ pb, rank, onChanged }: { pb: PlaybookView
       <p className="mt-3 text-sm break-all">
         Steps: {pb.uri.startsWith('http') ? <a className="underline" style={{ color: 'var(--rain)' }} href={pb.uri} target="_blank" rel="noreferrer">{pb.uri}</a> : pb.uri}
       </p>
+
+      {needsCoopId && !isStaff && (
+        <div className="mt-3">
+          <label className="text-xs" style={{ color: 'var(--muted)' }}>Your cooperative #
+            <input className="field ml-2 inline-block w-20" type="number" min="1" value={memberCoopId}
+              onChange={(e) => setMemberCoopId(e.target.value)} placeholder="1" />
+          </label>
+        </div>
+      )}
 
       {(canFollow || canSettle) && (
         <div className="mt-4 flex flex-wrap items-end gap-3">
